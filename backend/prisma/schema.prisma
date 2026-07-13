@@ -1,0 +1,151 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  STOREMAN
+  PLANNER
+  SUPERVISOR
+  ADMIN
+}
+
+enum JobType {
+  WARRANTY
+  CUSTOMER_REPAIR
+  INTERNAL
+  SERVICE
+  REBUILD
+  INSURANCE
+  OTHER
+}
+
+enum Priority {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+model User {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  createdJobs  Job[]         @relation("JobCreatedBy")
+  quotationsBy Quotation[]   @relation("QuotedBy")
+  dispatchesBy Dispatch[]    @relation("DispatchedBy")
+  auditLogs    JobAuditLog[]
+}
+
+model Job {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  referenceNumber String   @unique
+  description     String
+  customer        String
+  serialNumber    String
+  partNumber      String?
+  woNumber        String?
+  woNumberSetAt   DateTime?
+  poNumber        String?
+  jobType         JobType
+  poValue         Float
+  priority        Priority
+  jobCreatedDate  DateTime
+  comments        String?
+
+  createdById String @db.ObjectId
+  createdBy   User   @relation("JobCreatedBy", fields: [createdById], references: [id])
+
+  quotation Quotation?
+  repair    Repair?
+  dispatch  Dispatch?
+  invoice   Invoice?
+  auditLogs JobAuditLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Quotation {
+  id                  String    @id @default(auto()) @map("_id") @db.ObjectId
+  jobId               String    @unique @db.ObjectId
+  job                 Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  evaluationDate       DateTime?
+  epirocQuotationDate DateTime?
+  mcoNumber           String?
+  quotationAmount     Float?
+  quotedById          String?   @db.ObjectId
+  quotedBy            User?     @relation("QuotedBy", fields: [quotedById], references: [id])
+  comments            String?
+  delayReason         String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+}
+
+model Repair {
+  id                   String    @id @default(auto()) @map("_id") @db.ObjectId
+  jobId                String    @unique @db.ObjectId
+  job                  Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  purchaseOrderNumber  String?
+  purchaseOrderDate    DateTime?
+  repairStartDate      DateTime?
+  repairCompletionDate DateTime?
+  technicianName       String?
+  labourHours          Float?
+  partsCost            Float?
+  totalRepairCost      Float?
+  comments             String?
+  delayReason          String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+}
+
+model Dispatch {
+  id             String    @id @default(auto()) @map("_id") @db.ObjectId
+  jobId          String    @unique @db.ObjectId
+  job            Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  dispatchDate   DateTime?
+  courier        String?
+  trackingNumber String?
+  dispatchedById String?   @db.ObjectId
+  dispatchedBy   User?     @relation("DispatchedBy", fields: [dispatchedById], references: [id])
+  comments       String?
+  delayReason    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model Invoice {
+  id             String    @id @default(auto()) @map("_id") @db.ObjectId
+  jobId          String    @unique @db.ObjectId
+  job            Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  invoiceNumber  String?
+  invoiceDate    DateTime?
+  invoiceAmount  Float?
+  closingDate    DateTime?
+  comments       String?
+  delayReason    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model JobAuditLog {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  jobId       String   @db.ObjectId
+  job         Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  stage       String
+  action      String
+  summary     String
+  comment     String?
+  changedById String   @db.ObjectId
+  changedBy   User     @relation(fields: [changedById], references: [id])
+  changedAt   DateTime @default(now())
+}
