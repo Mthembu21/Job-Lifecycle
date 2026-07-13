@@ -2,7 +2,7 @@ import { ApiTwoTone } from "@mui/icons-material";
 import axios from "axios";
 
 export const apiClient = axios.create({
-  baseURL: "/api",
+  baseURL: import.meta.env.VITE_API_URL ?? "/api",
 });
 
 const TOKEN_KEY = "job-lifecycle.token";
