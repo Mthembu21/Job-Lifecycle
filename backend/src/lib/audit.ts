@@ -24,7 +24,7 @@ export function writeAuditLog(input: WriteAuditLogInput) {
 
 // Internal/technical fields, plus "comments" which the audit panel already shows
 // on its own line — listing them in the diff would just be noise for the reader.
-const DIFF_EXCLUDED_FIELDS = new Set(["id", "jobId", "createdAt", "updatedAt", "comments", "woNumberSetAt"]);
+const DIFF_EXCLUDED_FIELDS = new Set(["id", "jobId", "createdAt", "updatedAt", "comments"]);
 
 const FIELD_LABELS: Record<string, string> = {
   referenceNumber: "Reference Number",
@@ -33,6 +33,7 @@ const FIELD_LABELS: Record<string, string> = {
   serialNumber: "Serial Number",
   partNumber: "Part Number",
   woNumber: "WO Number",
+  woNumberSetAt: "WO Number Date",
   poNumber: "PO Number",
   jobType: "Job Type",
   poValue: "PO Value",

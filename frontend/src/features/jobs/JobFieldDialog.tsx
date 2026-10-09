@@ -3,9 +3,17 @@ import { Controller, useForm } from "react-hook-form";
 import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField } from "@mui/material";
 import { Job } from "../../types";
 import { useUpdateJob } from "../../api/jobs";
+import { toDateInputValue } from "../../utils/date";
+
+export type JobEditableField = "woNumber" | "poNumber" | "woNumberSetAt";
 
 interface FormValues {
   value: string;
+}
+
+function todayInputValue() {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
 }
 
 export function JobFieldDialog({
@@ -15,15 +23,16 @@ export function JobFieldDialog({
   onClose,
 }: {
   job: Job;
-  field: "woNumber" | "poNumber";
+  field: JobEditableField;
   label: string;
   onClose: () => void;
 }) {
   const updateJob = useUpdateJob(job.id);
   const [error, setError] = useState<string | null>(null);
+  const isDate = field === "woNumberSetAt";
 
   const { control, handleSubmit } = useForm<FormValues>({
-    defaultValues: { value: job[field] ?? "" },
+    defaultValues: { value: isDate ? toDateInputValue(job[field]) : job[field] ?? "" },
   });
 
   async function onSubmit(values: FormValues) {
@@ -58,6 +67,13 @@ export function JobFieldDialog({
               label={label}
               fullWidth
               required
+              {...(isDate
+                ? {
+                    type: "date",
+                    InputLabelProps: { shrink: true },
+                    inputProps: { min: toDateInputValue(job.jobCreatedDate), max: todayInputValue() },
+                  }
+                : {})}
               sx={{ mt: 1 }}
               error={!!fieldState.error}
               helperText={fieldState.error?.message}
