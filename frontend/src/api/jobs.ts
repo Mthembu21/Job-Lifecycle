@@ -106,6 +106,20 @@ export function useDeleteJob() {
   });
 }
 
+export function useBulkDeleteJobs() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids: string[]) => {
+      const { data } = await apiClient.delete<{ deletedCount: number }>("/jobs", { data: { ids } });
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
 export type StageKey = "quotation" | "repair" | "dispatch" | "invoice";
 
 export function useUpdateStage(jobId: string, stage: StageKey) {

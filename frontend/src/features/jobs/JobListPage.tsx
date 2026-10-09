@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   IconButton,
@@ -33,6 +34,7 @@ import { formatCurrency } from "../../utils/currency";
 import { formatDate, daysBetween } from "../../utils/date";
 import { DeleteJobDialog } from "./DeleteJobDialog";
 import { JobFieldDialog } from "./JobFieldDialog";
+import { BulkDeleteJobsDialog } from "./BulkDeleteJobsDialog";
 
 const PRIORITY_COLOR: Record<string, "error" | "warning" | "default"> = {
   HIGH: "error",
@@ -53,6 +55,21 @@ export function JobListPage() {
   const [deletingJob, setDeletingJob] = useState<Job | null>(null);
   const [editingWoDateJob, setEditingWoDateJob] = useState<Job | null>(null);
   const missingWoCount = jobs?.filter((j) => !j.woNumber).length ?? 0;
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
+  const canBulkDelete = canDeleteJob(user?.role);
+  const selectableIds = jobs?.map((j) => j.id) ?? [];
+  const allSelected = selectableIds.length > 0 && selectedIds.length === selectableIds.length;
+  const someSelected = selectedIds.length > 0 && !allSelected;
+
+  function toggleSelectAll() {
+    setSelectedIds(allSelected ? [] : selectableIds);
+  }
+
+  function toggleSelectOne(id: string) {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
 
   return (
     <Box>
@@ -71,14 +88,27 @@ export function JobListPage() {
             />
           )}
         </Stack>
-        {canCreateJob(user?.role) && (
-          <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate("/jobs/new")}>
-            New Job
-          </Button>
-        )}
+        <Stack direction="row" spacing={2}>
+          {canBulkDelete && selectedIds.length > 0 && (
+            <Button color="error" variant="outlined" startIcon={<DeleteIcon />} onClick={() => setBulkDeleting(true)}>
+              Delete Selected ({selectedIds.length})
+            </Button>
+          )}
+          {canCreateJob(user?.role) && (
+            <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate("/jobs/new")}>
+              New Job
+            </Button>
+          )}
+        </Stack>
       </Stack>
 
-      <FilterBar filters={filters} onChange={setFilters} />
+      <FilterBar
+        filters={filters}
+        onChange={(next) => {
+          setFilters(next);
+          setSelectedIds([]);
+        }}
+      />
 
       {isLoading ? (
         <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
@@ -89,6 +119,16 @@ export function JobListPage() {
           <Table size="small">
             <TableHead>
               <TableRow>
+                {canBulkDelete && (
+                  <TableCell padding="checkbox">
+                    <Checkbox
+                      indeterminate={someSelected}
+                      checked={allSelected}
+                      onChange={toggleSelectAll}
+                      disabled={selectableIds.length === 0}
+                    />
+                  </TableCell>
+                )}
                 <TableCell>Reference #</TableCell>
                 <TableCell>Customer</TableCell>
                 <TableCell>Job Type</TableCell>
@@ -101,7 +141,7 @@ export function JobListPage() {
                 <TableCell>SLA</TableCell>
                 <TableCell align="right">Job Age (days)</TableCell>
                 <TableCell align="right">PO Value</TableCell>
-                {canDeleteJob(user?.role) && <TableCell align="right">Actions</TableCell>}
+                {canBulkDelete && <TableCell align="right">Actions</TableCell>}
               </TableRow>
             </TableHead>
             <TableBody>
@@ -111,9 +151,15 @@ export function JobListPage() {
                   <TableRow
                     key={job.id}
                     hover
+                    selected={selectedIds.includes(job.id)}
                     sx={{ cursor: "pointer" }}
                     onClick={() => navigate(`/jobs/${job.id}`)}
                   >
+                    {canBulkDelete && (
+                      <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>
+                        <Checkbox checked={selectedIds.includes(job.id)} onChange={() => toggleSelectOne(job.id)} />
+                      </TableCell>
+                    )}
                     <TableCell sx={{ fontWeight: 600 }}>{job.referenceNumber}</TableCell>
                     <TableCell>{job.customer}</TableCell>
                     <TableCell>{JOB_TYPE_LABELS[job.jobType]}</TableCell>
@@ -156,7 +202,7 @@ export function JobListPage() {
                     <TableCell align="right">
                       {formatCurrency(Number(job.poValue))}
                     </TableCell>
-                    {canDeleteJob(user?.role) && (
+                    {canBulkDelete && (
                       <TableCell align="right">
                         <Tooltip title="Delete job">
                           <IconButton
@@ -176,7 +222,7 @@ export function JobListPage() {
               })}
               {jobs?.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={canDeleteJob(user?.role) ? 13 : 12} align="center" sx={{ py: 4 }}>
+                  <TableCell colSpan={canBulkDelete ? 14 : 12} align="center" sx={{ py: 4 }}>
                     <Typography color="text.secondary">No jobs match the current filters.</Typography>
                   </TableCell>
                 </TableRow>
@@ -193,6 +239,16 @@ export function JobListPage() {
           field="woNumberSetAt"
           label="WO Number Date"
           onClose={() => setEditingWoDateJob(null)}
+        />
+      )}
+      {bulkDeleting && (
+        <BulkDeleteJobsDialog
+          jobIds={selectedIds}
+          onClose={() => setBulkDeleting(false)}
+          onDeleted={() => {
+            setBulkDeleting(false);
+            setSelectedIds([]);
+          }}
         />
       )}
     </Box>

@@ -177,6 +177,23 @@ router.patch(
   })
 );
 
+const bulkDeleteSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1),
+});
+
+router.delete(
+  "/",
+  authenticate,
+  requireRole("STOREMAN"),
+  asyncHandler(async (req, res) => {
+    const { ids } = bulkDeleteSchema.parse(req.body);
+
+    const { count } = await prisma.job.deleteMany({ where: { id: { in: ids } } });
+
+    res.json({ deletedCount: count });
+  })
+);
+
 router.delete(
   "/:id",
   authenticate,
