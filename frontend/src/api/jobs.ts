@@ -12,6 +12,7 @@ export interface JobFilters {
   createdTo?: string;
   stage?: string;
   status?: string;
+  missingWo?: string;
 }
 
 export function useJobs(filters: JobFilters) {
@@ -79,7 +80,7 @@ export function useCreateJob() {
 export function useUpdateJob(jobId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { woNumber?: string; poNumber?: string }) => {
+    mutationFn: async (input: { woNumber?: string; poNumber?: string; woNumberSetAt?: string }) => {
       const { data } = await apiClient.patch<Job>(`/jobs/${jobId}`, input);
       return data;
     },

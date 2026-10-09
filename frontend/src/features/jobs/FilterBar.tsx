@@ -92,6 +92,19 @@ export function FilterBar({ filters, onChange }: FilterBarProps) {
             ))}
           </TextField>
         </Grid>
+        <Grid item xs={6} sm={3} md={2}>
+          <TextField
+            select
+            label="WO Number"
+            fullWidth
+            size="small"
+            value={filters.missingWo ?? ""}
+            onChange={(e) => set("missingWo", e.target.value)}
+          >
+            <MenuItem value="">All</MenuItem>
+            <MenuItem value="true">Missing WO</MenuItem>
+          </TextField>
+        </Grid>
         <Grid item xs={6} sm={4} md={1.5}>
           <TextField
             label="Created From"

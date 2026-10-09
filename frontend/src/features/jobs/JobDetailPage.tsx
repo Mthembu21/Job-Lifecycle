@@ -19,7 +19,7 @@ import { useJob } from "../../api/jobs";
 import { StageKey } from "../../api/jobs";
 import { StageTimeline } from "./StageTimeline";
 import { AuditLogPanel } from "./AuditLogPanel";
-import { JobFieldDialog } from "./JobFieldDialog";
+import { JobFieldDialog, JobEditableField } from "./JobFieldDialog";
 import { DeleteJobDialog } from "./DeleteJobDialog";
 import { QuotationDialog } from "./stageForms/QuotationDialog";
 import { RepairDialog } from "./stageForms/RepairDialog";
@@ -33,13 +33,19 @@ import { formatCurrency } from "../../utils/currency";
 import { useAuth } from "../../auth/AuthContext";
 import { canEditJobFields, canDeleteJob } from "../../auth/permissions";
 
+const FIELD_LABELS: Record<JobEditableField, string> = {
+  woNumber: "WO Number",
+  poNumber: "PO Number",
+  woNumberSetAt: "WO Number Date",
+};
+
 export function JobDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
   const { data: job, isLoading } = useJob(id);
   const [activeDialog, setActiveDialog] = useState<StageKey | null>(null);
-  const [editingField, setEditingField] = useState<"woNumber" | "poNumber" | null>(null);
+  const [editingField, setEditingField] = useState<JobEditableField | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   if (isLoading || !job) {
@@ -163,7 +169,18 @@ export function JobDetailPage() {
                 {job.woNumber && job.woNumberSetAt && (
                   <DetailRow
                     label="WO Number Submitted"
-                    value={`${formatDate(job.woNumberSetAt)} (${daysBetween(job.jobCreatedDate, job.woNumberSetAt)}d after job creation)`}
+                    value={
+                      <Stack direction="row" spacing={0.5} alignItems="center">
+                        <Typography variant="body2" fontWeight={500}>
+                          {`${formatDate(job.woNumberSetAt)} (${daysBetween(job.jobCreatedDate, job.woNumberSetAt)}d after job creation)`}
+                        </Typography>
+                        {canEditJobFields(user?.role) && (
+                          <IconButton size="small" onClick={() => setEditingField("woNumberSetAt")}>
+                            <EditIcon fontSize="inherit" />
+                          </IconButton>
+                        )}
+                      </Stack>
+                    }
                   />
                 )}
                 <DetailRow
@@ -219,7 +236,7 @@ export function JobDetailPage() {
         <JobFieldDialog
           job={job}
           field={editingField}
-          label={editingField === "woNumber" ? "WO Number" : "PO Number"}
+          label={FIELD_LABELS[editingField]}
           onClose={() => setEditingField(null)}
         />
       )}

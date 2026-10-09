@@ -29,8 +29,9 @@ const updateJobSchema = z
   .object({
     woNumber: z.string().min(1).optional(),
     poNumber: z.string().min(1).optional(),
+    woNumberSetAt: z.coerce.date().optional(),
   })
-  .refine((data) => data.woNumber !== undefined || data.poNumber !== undefined, {
+  .refine((data) => data.woNumber !== undefined || data.poNumber !== undefined || data.woNumberSetAt !== undefined, {
     message: "At least one field must be provided",
   });
 
@@ -69,7 +70,7 @@ router.get(
   "/",
   authenticate,
   asyncHandler(async (req, res) => {
-    const { search, customer, createdById, jobType, priority, createdFrom, createdTo, stage, status } =
+    const { search, customer, createdById, jobType, priority, createdFrom, createdTo, stage, status, missingWo } =
       req.query as Record<string, string | undefined>;
 
     const where: Prisma.JobWhereInput = {};
@@ -85,6 +86,7 @@ router.get(
     if (createdById) where.createdById = createdById;
     if (jobType) where.jobType = jobType as any;
     if (priority) where.priority = priority as any;
+    if (missingWo === "true") where.woNumber = null;
     if (createdFrom || createdTo) {
       where.jobCreatedDate = {
         ...(createdFrom ? { gte: new Date(createdFrom) } : {}),
@@ -129,7 +131,21 @@ router.patch(
     if (!job) throw new HttpError(404, "Job not found");
 
     const data = updateJobSchema.parse(req.body);
-    const before = { woNumber: job.woNumber, poNumber: job.poNumber };
+
+    if (data.woNumberSetAt !== undefined) {
+      if (!job.woNumber && !data.woNumber) {
+        throw new HttpError(400, "A WO number must be set before its date can be edited");
+      }
+      // One day of slack so a user ahead of UTC can still pick their local "today".
+      if (data.woNumberSetAt.getTime() > Date.now() + 86_400_000) {
+        throw new HttpError(400, "WO number date cannot be in the future");
+      }
+      if (data.woNumberSetAt.toISOString().slice(0, 10) < job.jobCreatedDate.toISOString().slice(0, 10)) {
+        throw new HttpError(400, "WO number date cannot be before the job created date");
+      }
+    }
+
+    const before = { woNumber: job.woNumber, poNumber: job.poNumber, woNumberSetAt: job.woNumberSetAt };
 
     const updated = await prisma.job.update({
       where: { id: job.id },
@@ -138,6 +154,7 @@ router.patch(
           woNumber: data.woNumber,
           woNumberSetAt: job.woNumberSetAt ?? new Date(),
         }),
+        ...(data.woNumberSetAt !== undefined && { woNumberSetAt: data.woNumberSetAt }),
         ...(data.poNumber !== undefined && { poNumber: data.poNumber }),
       },
       include: jobListInclude,
@@ -147,7 +164,12 @@ router.patch(
       jobId: job.id,
       stage: "JOB",
       action: "UPDATE",
-      summary: diffSummary(before, { woNumber: updated.woNumber, poNumber: updated.poNumber }),
+      summary: diffSummary(before, {
+        woNumber: updated.woNumber,
+        poNumber: updated.poNumber,
+        // Only log the date when it was edited by hand, not when auto-stamped with a new WO number.
+        ...(data.woNumberSetAt !== undefined && { woNumberSetAt: updated.woNumberSetAt }),
+      }),
       changedById: req.user!.sub,
     });
 
