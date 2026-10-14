@@ -54,6 +54,11 @@ export interface CreateJobInput {
   customer: string;
   serialNumber: string;
   partNumber?: string;
+  machineNumber?: string;
+  machineSerialNumber?: string;
+  customerRef?: string;
+  customerAccount?: string;
+  dateReceived?: string;
   woNumber?: string;
   poNumber?: string;
   jobType: string;
@@ -80,7 +85,12 @@ export function useCreateJob() {
 export function useUpdateJob(jobId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { woNumber?: string; poNumber?: string; woNumberSetAt?: string }) => {
+    mutationFn: async (input: {
+      woNumber?: string;
+      poNumber?: string;
+      woNumberSetAt?: string;
+      jobCreatedDate?: string;
+    }) => {
       const { data } = await apiClient.patch<Job>(`/jobs/${jobId}`, input);
       return data;
     },
@@ -127,6 +137,22 @@ export function useUpdateStage(jobId: string, stage: StageKey) {
   return useMutation({
     mutationFn: async (input: Record<string, unknown>) => {
       const { data } = await apiClient.patch<Job>(`/jobs/${jobId}/${stage}`, input);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["jobs", jobId] });
+      queryClient.invalidateQueries({ queryKey: ["jobs", jobId, "audit"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+export function useDeleteStage(jobId: string, stage: StageKey) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const { data } = await apiClient.delete<Job>(`/jobs/${jobId}/${stage}`);
       return data;
     },
     onSuccess: () => {

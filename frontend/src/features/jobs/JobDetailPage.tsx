@@ -37,6 +37,7 @@ const FIELD_LABELS: Record<JobEditableField, string> = {
   woNumber: "WO Number",
   poNumber: "PO Number",
   woNumberSetAt: "WO Number Date",
+  jobCreatedDate: "Job Created Date",
 };
 
 export function JobDetailPage() {
@@ -199,7 +200,21 @@ export function JobDetailPage() {
                   }
                 />
                 <DetailRow label="Created By" value={job.createdBy ? "Storeman" : "—"} />
-                <DetailRow label="Job Created Date" value={formatDate(job.jobCreatedDate)} />
+                <DetailRow
+                  label="Job Created Date"
+                  value={
+                    <Stack direction="row" spacing={0.5} alignItems="center">
+                      <Typography variant="body2" fontWeight={500}>
+                        {formatDate(job.jobCreatedDate)}
+                      </Typography>
+                      {canEditJobFields(user?.role) && (
+                        <IconButton size="small" onClick={() => setEditingField("jobCreatedDate")}>
+                          <EditIcon fontSize="inherit" />
+                        </IconButton>
+                      )}
+                    </Stack>
+                  }
+                />
                 <DetailRow label="PO Value" value={formatCurrency(Number(job.poValue))} />
                 <DetailRow
                   label="Overall SLA Compliance"

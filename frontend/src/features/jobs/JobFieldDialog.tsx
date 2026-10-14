@@ -5,7 +5,7 @@ import { Job } from "../../types";
 import { useUpdateJob } from "../../api/jobs";
 import { toDateInputValue } from "../../utils/date";
 
-export type JobEditableField = "woNumber" | "poNumber" | "woNumberSetAt";
+export type JobEditableField = "woNumber" | "poNumber" | "woNumberSetAt" | "jobCreatedDate";
 
 interface FormValues {
   value: string;
@@ -14,6 +14,21 @@ interface FormValues {
 function todayInputValue() {
   const now = new Date();
   return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+}
+
+const DATE_FIELDS = new Set<JobEditableField>(["woNumberSetAt", "jobCreatedDate"]);
+
+function dateConstraints(field: JobEditableField, job: Job): { min?: string; max?: string } {
+  if (field === "woNumberSetAt") {
+    return { min: toDateInputValue(job.jobCreatedDate), max: todayInputValue() };
+  }
+  if (field === "jobCreatedDate") {
+    return {
+      min: job.dateReceived ? toDateInputValue(job.dateReceived) : undefined,
+      max: job.woNumberSetAt ? toDateInputValue(job.woNumberSetAt) : todayInputValue(),
+    };
+  }
+  return {};
 }
 
 export function JobFieldDialog({
@@ -29,7 +44,7 @@ export function JobFieldDialog({
 }) {
   const updateJob = useUpdateJob(job.id);
   const [error, setError] = useState<string | null>(null);
-  const isDate = field === "woNumberSetAt";
+  const isDate = DATE_FIELDS.has(field);
 
   const { control, handleSubmit } = useForm<FormValues>({
     defaultValues: { value: isDate ? toDateInputValue(job[field]) : job[field] ?? "" },
@@ -71,7 +86,7 @@ export function JobFieldDialog({
                 ? {
                     type: "date",
                     InputLabelProps: { shrink: true },
-                    inputProps: { min: toDateInputValue(job.jobCreatedDate), max: todayInputValue() },
+                    inputProps: dateConstraints(field, job),
                   }
                 : {})}
               sx={{ mt: 1 }}
