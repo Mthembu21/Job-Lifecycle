@@ -16,11 +16,6 @@ const createJobSchema = z.object({
   customer: z.string().min(1),
   serialNumber: z.string().min(1),
   partNumber: z.string().optional(),
-  machineNumber: z.string().optional(),
-  machineSerialNumber: z.string().optional(),
-  customerRef: z.string().optional(),
-  customerAccount: z.string().optional(),
-  dateReceived: z.coerce.date().optional(),
   woNumber: z.string().optional(),
   poNumber: z.string().optional(),
   jobType: z.enum(["WARRANTY", "CUSTOMER_REPAIR", "INTERNAL", "SERVICE", "REBUILD", "INSURANCE", "OTHER"]),
@@ -162,9 +157,6 @@ router.patch(
     if (data.jobCreatedDate !== undefined) {
       if (data.jobCreatedDate.getTime() > Date.now() + 86_400_000) {
         throw new HttpError(400, "Job created date cannot be in the future");
-      }
-      if (job.dateReceived && data.jobCreatedDate.toISOString().slice(0, 10) < job.dateReceived.toISOString().slice(0, 10)) {
-        throw new HttpError(400, "Job created date cannot be before the date received");
       }
       const woNumberSetAtCeiling = data.woNumberSetAt ?? job.woNumberSetAt;
       if (woNumberSetAtCeiling && data.jobCreatedDate.toISOString().slice(0, 10) > woNumberSetAtCeiling.toISOString().slice(0, 10)) {
