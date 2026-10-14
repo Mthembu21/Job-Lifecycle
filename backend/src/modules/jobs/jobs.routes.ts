@@ -16,6 +16,11 @@ const createJobSchema = z.object({
   customer: z.string().min(1),
   serialNumber: z.string().min(1),
   partNumber: z.string().optional(),
+  machineNumber: z.string().optional(),
+  machineSerialNumber: z.string().optional(),
+  customerRef: z.string().optional(),
+  customerAccount: z.string().optional(),
+  dateReceived: z.coerce.date().optional(),
   woNumber: z.string().optional(),
   poNumber: z.string().optional(),
   jobType: z.enum(["WARRANTY", "CUSTOMER_REPAIR", "INTERNAL", "SERVICE", "REBUILD", "INSURANCE", "OTHER"]),
@@ -30,10 +35,18 @@ const updateJobSchema = z
     woNumber: z.string().min(1).optional(),
     poNumber: z.string().min(1).optional(),
     woNumberSetAt: z.coerce.date().optional(),
+    jobCreatedDate: z.coerce.date().optional(),
   })
-  .refine((data) => data.woNumber !== undefined || data.poNumber !== undefined || data.woNumberSetAt !== undefined, {
-    message: "At least one field must be provided",
-  });
+  .refine(
+    (data) =>
+      data.woNumber !== undefined ||
+      data.poNumber !== undefined ||
+      data.woNumberSetAt !== undefined ||
+      data.jobCreatedDate !== undefined,
+    {
+      message: "At least one field must be provided",
+    }
+  );
 
 router.post(
   "/",
@@ -97,7 +110,7 @@ router.get(
     const jobs = await prisma.job.findMany({
       where,
       include: jobListInclude,
-      orderBy: { jobCreatedDate: "desc" },
+      orderBy: { referenceNumber: "asc" },
     });
 
     let dtos = jobs.map(toJobDto);
@@ -125,7 +138,7 @@ router.get(
 router.patch(
   "/:id",
   authenticate,
-  requireRole("STOREMAN"),
+  requireRole("STOREMAN", "PLANNER"),
   asyncHandler(async (req, res) => {
     const job = await prisma.job.findUnique({ where: { id: req.params.id } });
     if (!job) throw new HttpError(404, "Job not found");
@@ -140,12 +153,31 @@ router.patch(
       if (data.woNumberSetAt.getTime() > Date.now() + 86_400_000) {
         throw new HttpError(400, "WO number date cannot be in the future");
       }
-      if (data.woNumberSetAt.toISOString().slice(0, 10) < job.jobCreatedDate.toISOString().slice(0, 10)) {
+      const jobCreatedDateFloor = data.jobCreatedDate ?? job.jobCreatedDate;
+      if (data.woNumberSetAt.toISOString().slice(0, 10) < jobCreatedDateFloor.toISOString().slice(0, 10)) {
         throw new HttpError(400, "WO number date cannot be before the job created date");
       }
     }
 
-    const before = { woNumber: job.woNumber, poNumber: job.poNumber, woNumberSetAt: job.woNumberSetAt };
+    if (data.jobCreatedDate !== undefined) {
+      if (data.jobCreatedDate.getTime() > Date.now() + 86_400_000) {
+        throw new HttpError(400, "Job created date cannot be in the future");
+      }
+      if (job.dateReceived && data.jobCreatedDate.toISOString().slice(0, 10) < job.dateReceived.toISOString().slice(0, 10)) {
+        throw new HttpError(400, "Job created date cannot be before the date received");
+      }
+      const woNumberSetAtCeiling = data.woNumberSetAt ?? job.woNumberSetAt;
+      if (woNumberSetAtCeiling && data.jobCreatedDate.toISOString().slice(0, 10) > woNumberSetAtCeiling.toISOString().slice(0, 10)) {
+        throw new HttpError(400, "Job created date cannot be after the WO number date");
+      }
+    }
+
+    const before = {
+      woNumber: job.woNumber,
+      poNumber: job.poNumber,
+      woNumberSetAt: job.woNumberSetAt,
+      jobCreatedDate: job.jobCreatedDate,
+    };
 
     const updated = await prisma.job.update({
       where: { id: job.id },
@@ -156,6 +188,7 @@ router.patch(
         }),
         ...(data.woNumberSetAt !== undefined && { woNumberSetAt: data.woNumberSetAt }),
         ...(data.poNumber !== undefined && { poNumber: data.poNumber }),
+        ...(data.jobCreatedDate !== undefined && { jobCreatedDate: data.jobCreatedDate }),
       },
       include: jobListInclude,
     });
@@ -169,6 +202,7 @@ router.patch(
         poNumber: updated.poNumber,
         // Only log the date when it was edited by hand, not when auto-stamped with a new WO number.
         ...(data.woNumberSetAt !== undefined && { woNumberSetAt: updated.woNumberSetAt }),
+        ...(data.jobCreatedDate !== undefined && { jobCreatedDate: updated.jobCreatedDate }),
       }),
       changedById: req.user!.sub,
     });

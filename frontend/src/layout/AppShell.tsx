@@ -118,7 +118,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </Drawer>
       <Box component="main" sx={{ flexGrow: 1, p: 3, bgcolor: "background.default", minHeight: "100vh" }}>
         <Toolbar />
-        {children}
+        <Box sx={{ maxWidth: 1600, mx: "auto" }}>{children}</Box>
       </Box>
     </Box>
   );
