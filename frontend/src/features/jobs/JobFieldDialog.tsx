@@ -24,7 +24,6 @@ function dateConstraints(field: JobEditableField, job: Job): { min?: string; max
   }
   if (field === "jobCreatedDate") {
     return {
-      min: job.dateReceived ? toDateInputValue(job.dateReceived) : undefined,
       max: job.woNumberSetAt ? toDateInputValue(job.woNumberSetAt) : todayInputValue(),
     };
   }
