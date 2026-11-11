@@ -15,6 +15,7 @@ import {
 } from "@mui/material";
 import WorkOutlineIcon from "@mui/icons-material/WorkOutline";
 import DashboardIcon from "@mui/icons-material/Dashboard";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import DarkModeIcon from "@mui/icons-material/DarkMode";
 import LightModeIcon from "@mui/icons-material/LightMode";
 import LogoutIcon from "@mui/icons-material/Logout";
@@ -113,6 +114,18 @@ export function AppShell({ children }: { children: ReactNode }) {
               <WorkOutlineIcon />
             </ListItemIcon>
             <ListItemText primary="Jobs" />
+          </ListItemButton>
+          <ListItemButton
+            component="a"
+            href="/board"
+            target="_blank"
+            rel="noopener noreferrer"
+            sx={{ borderRadius: 1, borderLeft: "3px solid transparent" }}
+          >
+            <ListItemIcon>
+              <OpenInNewIcon />
+            </ListItemIcon>
+            <ListItemText primary="TV Board" />
           </ListItemButton>
         </List>
       </Drawer>
