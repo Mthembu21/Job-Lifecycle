@@ -5,6 +5,7 @@ import { DashboardPage } from "./features/dashboard/DashboardPage";
 import { JobListPage } from "./features/jobs/JobListPage";
 import { JobCreateForm } from "./features/jobs/JobCreateForm";
 import { JobDetailPage } from "./features/jobs/JobDetailPage";
+import { BoardPage } from "./features/board/BoardPage";
 import { useAuth } from "./auth/AuthContext";
 
 function HomeRedirect() {
@@ -16,6 +17,7 @@ export function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/board" element={<BoardPage />} />
       <Route element={<ProtectedRoute />}>
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/jobs" element={<JobListPage />} />

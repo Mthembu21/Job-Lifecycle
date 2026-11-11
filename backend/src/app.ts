@@ -11,6 +11,7 @@ import dispatchRoutes from "./modules/dispatch/dispatch.routes";
 import invoiceRoutes from "./modules/invoice/invoice.routes";
 import auditRoutes from "./modules/audit/audit.routes";
 import dashboardRoutes from "./modules/dashboard/dashboard.routes";
+import boardRoutes from "./modules/board/board.routes";
 
 export function createApp() {
   const app = express();
@@ -29,6 +30,7 @@ export function createApp() {
   app.use("/api/jobs/:jobId/invoice", invoiceRoutes);
   app.use("/api/jobs/:jobId/audit", auditRoutes);
   app.use("/api/dashboard", dashboardRoutes);
+  app.use("/api/board", boardRoutes);
 
   app.use(errorHandler);
 
