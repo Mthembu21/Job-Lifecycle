@@ -3,6 +3,7 @@ import { BoardJob, useBoardJobs } from "../../api/board";
 import { BoardJobCard } from "./BoardJobCard";
 import { STAGE_LABELS } from "../../constants";
 import { StageName } from "../../types";
+import { Logo } from "../../components/ui";
 
 const COLUMNS: StageName[] = ["QUOTATION", "AWAITING_PO", "REPAIR", "DISPATCH", "INVOICING", "CLOSED"];
 
@@ -53,59 +54,87 @@ export function BoardPage() {
   const currentJobs = currentStage ? byStage.get(currentStage) ?? [] : [];
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-board-bg text-white">
-      <div className="flex items-baseline justify-between px-6 pt-5 pb-3">
-        <h1 className="text-lg font-bold text-white/85">Job Lifecycle Board</h1>
-        <div className="flex items-baseline gap-6">
-          <span className="text-sm text-white/50">
-            Updated {dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : "—"}
-          </span>
-          <span className="font-mono text-lg text-white/85">{now.toLocaleTimeString()}</span>
+    // Always light (no dark: variants) — it's a shared meeting-room screen, independent of
+    // whichever theme this browser last used.
+    <div className="flex h-screen flex-col overflow-hidden bg-gray-100 text-gray-900">
+      <header className="flex items-center justify-between gap-6 border-b-4 border-yellow bg-white px-8 py-4 shadow-sm">
+        <div className="flex items-center gap-5">
+          <Logo variant="color" className="h-9" />
+          <span aria-hidden className="h-8 w-px bg-gray-200" />
+          <h1 className="text-2xl font-bold tracking-tight text-gray-800">Job Lifecycle Board</h1>
         </div>
-      </div>
+        <div className="flex items-center gap-8">
+          <div className="hidden items-center gap-4 text-sm text-gray-600 lg:flex">
+            <span className="flex items-center gap-1.5">
+              <span className="size-3 rounded-full bg-success" /> On track
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="size-3 rounded-full bg-yellow" /> Approaching SLA
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="size-3 rounded-full bg-danger" /> Overdue
+            </span>
+          </div>
+          <div className="text-right leading-tight">
+            <p className="text-2xl font-semibold text-gray-800 tabular-nums">{now.toLocaleTimeString()}</p>
+            <p className="text-xs text-gray-500">
+              Updated {dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : "—"}
+            </p>
+          </div>
+        </div>
+      </header>
 
       {!isLoading && activeStages.length > 1 && (
-        <div className="relative h-[3px] overflow-hidden bg-white/5">
+        <div className="relative h-1 overflow-hidden bg-gray-200">
           {/* Duration comes from a JS constant, so this one has to be an
               inline style — Tailwind can only scan static literal classes. */}
           <div
             key={currentStage}
-            className="absolute inset-0 origin-left bg-epiroc-yellow"
+            className="absolute inset-0 origin-left bg-yellow"
             style={{ animation: `board-progress ${STAGE_DURATION_MS}ms linear forwards` }}
           />
         </div>
       )}
 
-      <div className="flex gap-3 px-6 py-4">
+      <div className="flex gap-3 px-8 py-5">
         {COLUMNS.map((stage) => {
           const count = byStage.get(stage)?.length ?? 0;
           const isActive = stage === currentStage;
           return (
             <div
               key={stage}
-              className={`flex-1 rounded-lg py-2 text-center transition-colors duration-500 ${
-                isActive ? "bg-epiroc-yellow text-epiroc-black" : "bg-board-panel text-white"
-              } ${count === 0 ? "opacity-40" : "opacity-100"}`}
+              className={`flex-1 rounded-xl border px-3 py-3 text-center transition-all duration-500 ${
+                isActive
+                  ? "scale-[1.03] border-yellow bg-yellow text-gray-900 shadow-md"
+                  : "border-gray-200 bg-white text-gray-700 shadow-sm"
+              } ${count === 0 ? "opacity-45" : "opacity-100"}`}
             >
-              <p className="text-sm font-bold">{STAGE_LABELS[stage]}</p>
-              <p className="text-xs opacity-80">
-                {count} job{count === 1 ? "" : "s"}
+              <p className="text-base font-bold">{STAGE_LABELS[stage]}</p>
+              <p className={`text-3xl font-extrabold tabular-nums ${isActive ? "text-gray-900" : "text-gray-800"}`}>
+                {count}
               </p>
+              <p className={`text-xs ${isActive ? "text-gray-800" : "text-gray-500"}`}>job{count === 1 ? "" : "s"}</p>
             </div>
           );
         })}
       </div>
 
-      <div className="min-h-0 flex-1 px-6 pb-6">
+      <div className="min-h-0 flex-1 px-8 pb-8">
         {isLoading ? (
-          <p className="mt-16 text-center text-xl text-white/50">Loading…</p>
+          <p className="mt-16 text-center text-xl text-gray-500">Loading…</p>
         ) : (
           <div
             key={currentStage ?? "empty"}
             className="flex h-full min-h-0 flex-col animate-[board-fade-in_0.6s_ease]"
           >
-            <h2 className="mb-4 shrink-0 text-4xl font-extrabold text-epiroc-yellow">
+            <h2 className="mb-5 flex shrink-0 items-center gap-4 text-4xl font-extrabold tracking-tight text-gray-800">
+              <span aria-hidden className="h-10 w-2 rounded-full bg-yellow" />
               {currentStage ? STAGE_LABELS[currentStage] : "No open jobs"}
+              {currentStage && (
+                <span className="text-2xl font-semibold text-gray-500">
+                  {currentJobs.length} job{currentJobs.length === 1 ? "" : "s"}
+                </span>
+              )}
             </h2>
             <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4 overflow-y-auto">
               {currentJobs.map((job) => (

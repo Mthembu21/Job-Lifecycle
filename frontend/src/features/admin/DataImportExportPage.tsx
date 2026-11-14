@@ -1,22 +1,6 @@
 import { useRef, useState } from "react";
 import { Navigate } from "react-router-dom";
-import {
-  Alert,
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Chip,
-  CircularProgress,
-  Divider,
-  List,
-  ListItem,
-  ListItemText,
-  Stack,
-  Typography,
-} from "@mui/material";
-import UploadFileIcon from "@mui/icons-material/UploadFile";
-import DownloadIcon from "@mui/icons-material/Download";
+import { Download, FileSpreadsheet, Upload } from "lucide-react";
 import { useAuth } from "../../auth/AuthContext";
 import {
   downloadSchedulerExport,
@@ -24,6 +8,7 @@ import {
   usePreviewSchedulerImport,
   useRunSchedulerImport,
 } from "../../api/importExport";
+import { Alert, Badge, Button, Card, CardTitle, PageHeader } from "../../components/ui";
 
 export function DataImportExportPage() {
   const { user } = useAuth();
@@ -82,132 +67,114 @@ export function DataImportExportPage() {
     }
   }
 
+  const skippedRows = preview?.rows.filter((r) => r.outcome !== "created") ?? [];
+
   return (
-    <Box sx={{ maxWidth: 720 }}>
-      <Typography variant="h5" fontWeight={700} sx={{ mb: 2 }}>
-        Tracker Data Import / Export
-      </Typography>
+    <div className="flex max-w-3xl flex-col gap-4">
+      <PageHeader title="Tracker Data Import / Export" />
 
       {canImport && (
-      <Card sx={{ mb: 3 }}>
-        <CardContent>
-          <Typography variant="h6" sx={{ mb: 1 }}>
-            Import from "SCHEDULER 2025"
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Upload the tracker workbook (.xlsx). Rows whose reference number already exists in the app
-            are left untouched — only new jobs are added.
-          </Typography>
+        <Card className="p-6">
+          <CardTitle>Import from "SCHEDULER 2025"</CardTitle>
+          <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">
+            Upload the tracker workbook (.xlsx). Rows whose reference number already exists in the app are left
+            untouched — only new jobs are added.
+          </p>
 
-          <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2 }}>
-            <Button variant="outlined" component="label" startIcon={<UploadFileIcon />}>
-              Choose file
-              <input ref={fileInputRef} type="file" hidden accept=".xlsx,.xls" onChange={handleFileChange} />
-            </Button>
-            <Typography variant="body2">{selectedFile?.name ?? "No file selected"}</Typography>
-          </Stack>
+          <label className="mb-4 flex cursor-pointer items-center gap-3 rounded-lg border-2 border-dashed border-gray-300 px-4 py-4 transition-colors hover:border-yellow hover:bg-yellow-soft/50 dark:border-gray-600 dark:hover:bg-yellow/5">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800">
+              <FileSpreadsheet className="size-5 text-gray-600 dark:text-gray-300" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-semibold text-gray-900 dark:text-gray-100">
+                {selectedFile?.name ?? "Choose a workbook…"}
+              </span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">.xlsx or .xls</span>
+            </span>
+            <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-gray-700 dark:text-gray-200">
+              <Upload className="size-4" /> Browse
+            </span>
+            <input ref={fileInputRef} type="file" className="sr-only" accept=".xlsx,.xls" onChange={handleFileChange} />
+          </label>
 
-          <Stack direction="row" spacing={2}>
-            <Button variant="outlined" disabled={!selectedFile || previewMutation.isPending} onClick={handlePreview}>
-              {previewMutation.isPending ? <CircularProgress size={20} /> : "Preview"}
+          <div className="flex gap-2">
+            <Button disabled={!selectedFile} loading={previewMutation.isPending} onClick={handlePreview}>
+              Preview
             </Button>
-            <Button
-              variant="contained"
-              disabled={!selectedFile || importMutation.isPending}
-              onClick={handleImport}
-            >
-              {importMutation.isPending ? <CircularProgress size={20} /> : "Import"}
+            <Button variant="primary" disabled={!selectedFile} loading={importMutation.isPending} onClick={handleImport}>
+              Import
             </Button>
-          </Stack>
+          </div>
 
           {previewMutation.isError && (
-            <Alert severity="error" sx={{ mt: 2 }}>
+            <Alert severity="error" className="mt-4">
               {(previewMutation.error as any)?.response?.data?.error ?? "Could not read that file"}
             </Alert>
           )}
           {importMutation.isError && (
-            <Alert severity="error" sx={{ mt: 2 }}>
+            <Alert severity="error" className="mt-4">
               {(importMutation.error as any)?.response?.data?.error ?? "Import failed"}
             </Alert>
           )}
 
           {preview && (
-            <Box sx={{ mt: 2 }}>
-              <Divider sx={{ mb: 2 }} />
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                Preview (nothing has been saved yet)
-              </Typography>
-              <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
-                <Chip label={`${preview.totalDataRows} rows in sheet`} />
-                <Chip color="success" label={`${preview.created} new jobs to add`} />
-                <Chip label={`${preview.skippedExisting} already in app`} />
-                {preview.skippedDuplicate > 0 && (
-                  <Chip color="warning" label={`${preview.skippedDuplicate} duplicate rows in sheet`} />
-                )}
-              </Stack>
-              <Typography variant="body2" color="text.secondary">
+            <div className="mt-5 border-t border-gray-100 pt-4 dark:border-gray-800">
+              <p className="mb-2 text-sm font-semibold">Preview (nothing has been saved yet)</p>
+              <div className="mb-2 flex flex-wrap gap-2">
+                <Badge>{preview.totalDataRows} rows in sheet</Badge>
+                <Badge tone="success">{preview.created} new jobs to add</Badge>
+                <Badge>{preview.skippedExisting} already in app</Badge>
+                {preview.skippedDuplicate > 0 && <Badge tone="warning">{preview.skippedDuplicate} duplicate rows in sheet</Badge>}
+              </div>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
                 Click "Import" to add the {preview.created} new jobs to the database.
-              </Typography>
-            </Box>
+              </p>
+            </div>
           )}
 
           {imported && (
-            <Alert severity="success" sx={{ mt: 2 }}>
-              Import complete: {imported.created} new jobs added, {imported.skippedExisting} already
-              existed and were left unchanged
+            <Alert severity="success" className="mt-4">
+              Import complete: {imported.created} new jobs added, {imported.skippedExisting} already existed and were left
+              unchanged
               {imported.skippedDuplicate > 0 ? `, ${imported.skippedDuplicate} duplicate rows skipped` : ""}.
             </Alert>
           )}
-        </CardContent>
-      </Card>
-      )}
-
-      <Card>
-        <CardContent>
-          <Typography variant="h6" sx={{ mb: 1 }}>
-            Export current data
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Download every job currently in the app as a "SCHEDULER 2025"-format workbook, with the
-            same columns as the original tracker.
-          </Typography>
-          <Button
-            variant="contained"
-            startIcon={<DownloadIcon />}
-            onClick={handleExport}
-            disabled={isExporting}
-          >
-            {isExporting ? <CircularProgress size={20} /> : "Export to Excel"}
-          </Button>
-          {exportError && (
-            <Alert severity="error" sx={{ mt: 2 }}>
-              {exportError}
-            </Alert>
-          )}
-        </CardContent>
-      </Card>
-
-      {preview && preview.rows.some((r) => r.outcome !== "created") && (
-        <Card sx={{ mt: 3 }}>
-          <CardContent>
-            <Typography variant="subtitle2" sx={{ mb: 1 }}>
-              Rows skipped in last preview
-            </Typography>
-            <List dense sx={{ maxHeight: 240, overflow: "auto" }}>
-              {preview.rows
-                .filter((r) => r.outcome !== "created")
-                .map((r) => (
-                  <ListItem key={`${r.rowNumber}-${r.referenceNumber}`} disableGutters>
-                    <ListItemText
-                      primary={`${r.referenceNumber} (sheet row ${r.rowNumber})`}
-                      secondary={r.outcome === "skipped_existing" ? "Already in app" : "Duplicate reference in sheet"}
-                    />
-                  </ListItem>
-                ))}
-            </List>
-          </CardContent>
         </Card>
       )}
-    </Box>
+
+      <Card className="p-6">
+        <CardTitle>Export current data</CardTitle>
+        <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">
+          Download every job currently in the app as a "SCHEDULER 2025"-format workbook, with the same columns as the
+          original tracker.
+        </p>
+        <Button variant="primary" icon={<Download className="size-4" />} onClick={handleExport} loading={isExporting}>
+          Export to Excel
+        </Button>
+        {exportError && (
+          <Alert severity="error" className="mt-4">
+            {exportError}
+          </Alert>
+        )}
+      </Card>
+
+      {skippedRows.length > 0 && (
+        <Card className="p-6">
+          <CardTitle>Rows skipped in last preview</CardTitle>
+          <ul className="max-h-60 divide-y divide-gray-100 overflow-auto dark:divide-gray-800">
+            {skippedRows.map((r) => (
+              <li key={`${r.rowNumber}-${r.referenceNumber}`} className="py-2">
+                <p className="text-sm font-medium">
+                  {r.referenceNumber} (sheet row {r.rowNumber})
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {r.outcome === "skipped_existing" ? "Already in app" : "Duplicate reference in sheet"}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+    </div>
   );
 }

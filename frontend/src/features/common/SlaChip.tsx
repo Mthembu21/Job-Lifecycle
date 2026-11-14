@@ -1,14 +1,14 @@
-import { Chip } from "@mui/material";
+import { Badge, BadgeTone } from "../../components/ui";
 import { SlaColor } from "../../types";
 
-const SLA_CONFIG: Record<SlaColor, { label: string; color: "success" | "warning" | "error" | "default" }> = {
-  GREEN: { label: "On track", color: "success" },
-  AMBER: { label: "Approaching SLA", color: "warning" },
-  RED: { label: "Overdue", color: "error" },
-  NOT_APPLICABLE: { label: "N/A", color: "default" },
+const SLA_CONFIG: Record<SlaColor, { label: string; tone: BadgeTone }> = {
+  GREEN: { label: "On track", tone: "success" },
+  AMBER: { label: "Approaching SLA", tone: "warning" },
+  RED: { label: "Overdue", tone: "danger" },
+  NOT_APPLICABLE: { label: "N/A", tone: "outline" },
 };
 
 export function SlaChip({ status }: { status: SlaColor }) {
   const config = SLA_CONFIG[status];
-  return <Chip size="small" label={config.label} color={config.color} variant={status === "NOT_APPLICABLE" ? "outlined" : "filled"} />;
+  return <Badge tone={config.tone}>{config.label}</Badge>;
 }

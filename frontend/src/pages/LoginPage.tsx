@@ -1,19 +1,7 @@
 import { FormEvent, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
-import {
-  Alert,
-  Avatar,
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Stack,
-  TextField,
-  Typography,
-} from "@mui/material";
-import WorkOutlineIcon from "@mui/icons-material/WorkOutline";
 import { useAuth } from "../auth/AuthContext";
-import { EPIROC_BLACK, EPIROC_YELLOW } from "../theme/epirocBrand";
+import { Alert, Button, Logo, TextField } from "../components/ui";
 
 export function LoginPage() {
   const { user, login } = useAuth();
@@ -44,52 +32,38 @@ export function LoginPage() {
   }
 
   return (
-    <Box
-      sx={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        minHeight: "100vh",
-        bgcolor: "background.default",
-      }}
-    >
-      <Card sx={{ width: 380 }} elevation={3}>
-        <CardContent component="form" onSubmit={handleSubmit} sx={{ p: 4 }}>
-          <Stack spacing={1} alignItems="center" sx={{ mb: 3 }}>
-            <Avatar sx={{ bgcolor: EPIROC_BLACK, width: 48, height: 48 }}>
-              <WorkOutlineIcon sx={{ color: EPIROC_YELLOW }} />
-            </Avatar>
-            <Typography variant="h6" fontWeight={700}>
-              Job Lifecycle Management
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Sign in to continue
-            </Typography>
-          </Stack>
-          <Stack spacing={2}>
-            {error && <Alert severity="error">{error}</Alert>}
-            <TextField
-              label="Email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              fullWidth
-              required
-            />
-            <TextField
-              label="Password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              fullWidth
-              required
-            />
-            <Button type="submit" variant="contained" size="large" disabled={submitting}>
-              {submitting ? "Signing in..." : "Sign in"}
-            </Button>
-          </Stack>
-        </CardContent>
-      </Card>
-    </Box>
+    <div className="flex min-h-screen items-center justify-center bg-gray-100 px-4 dark:bg-gray-950">
+      <div className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-gray-900">
+        <div className="flex flex-col items-center gap-5 border-b-4 border-yellow px-8 pt-9 pb-7">
+          <Logo className="h-10" />
+          <div className="text-center">
+            <h1 className="text-lg font-bold text-gray-900 dark:text-gray-50">Job Lifecycle Management</h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Sign in to continue</p>
+          </div>
+        </div>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4 px-8 py-7">
+          {error && <Alert severity="error">{error}</Alert>}
+          <TextField
+            label="Email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+          <TextField
+            label="Password"
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+          <Button type="submit" variant="primary" size="lg" loading={submitting} className="mt-1 w-full">
+            {submitting ? "Signing in…" : "Sign in"}
+          </Button>
+        </form>
+      </div>
+    </div>
   );
 }

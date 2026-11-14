@@ -1,44 +1,43 @@
-import { Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from "@mui/material";
 import { CustomerPerformanceRow } from "../../api/dashboard";
 import { EmptyChartState } from "./charts/ChartCard";
 
-function complianceColor(percent: number): string {
-  if (percent >= 90) return "success.main";
-  if (percent >= 70) return "warning.main";
-  return "error.main";
+function complianceClass(percent: number): string {
+  if (percent >= 90) return "text-success dark:text-success-light";
+  if (percent >= 70) return "rounded bg-yellow px-1.5 text-gray-900";
+  return "text-danger dark:text-danger-light";
 }
 
 export function CustomerPerformanceTable({ rows }: { rows: CustomerPerformanceRow[] }) {
   if (rows.length === 0) return <EmptyChartState />;
 
   return (
-    <TableContainer sx={{ maxHeight: 360 }}>
-      <Table size="small" stickyHeader>
-        <TableHead>
-          <TableRow>
-            <TableCell>Customer</TableCell>
-            <TableCell align="right">Jobs</TableCell>
-            <TableCell align="right">Avg Turnaround</TableCell>
-            <TableCell align="right">SLA Compliance</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
+    <div className="max-h-[360px] overflow-auto">
+      <table className="w-full text-sm">
+        <thead className="sticky top-0 bg-gray-50 text-left text-xs font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+          <tr>
+            <th className="px-3 py-2">Customer</th>
+            <th className="px-3 py-2 text-right">Jobs</th>
+            <th className="px-3 py-2 text-right">Avg Turnaround</th>
+            <th className="px-3 py-2 text-right">SLA Compliance</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
           {rows.map((row) => (
-            <TableRow key={row.customer}>
-              <TableCell>{row.customer}</TableCell>
-              <TableCell align="right">{row.jobCount}</TableCell>
-              <TableCell align="right">
+            <tr key={row.customer}>
+              <td className="px-3 py-2">{row.customer}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{row.jobCount}</td>
+              <td className="px-3 py-2 text-right tabular-nums">
                 {row.avgTurnaroundDays !== null ? `${row.avgTurnaroundDays} days` : "—"}
-              </TableCell>
-              <TableCell align="right">
-                <Typography variant="body2" fontWeight={600} color={complianceColor(row.slaCompliancePercent)}>
+              </td>
+              <td className="px-3 py-2 text-right">
+                <span className={`font-semibold tabular-nums ${complianceClass(row.slaCompliancePercent)}`}>
                   {row.slaCompliancePercent}%
-                </Typography>
-              </TableCell>
-            </TableRow>
+                </span>
+              </td>
+            </tr>
           ))}
-        </TableBody>
-      </Table>
-    </TableContainer>
+        </tbody>
+      </table>
+    </div>
   );
 }

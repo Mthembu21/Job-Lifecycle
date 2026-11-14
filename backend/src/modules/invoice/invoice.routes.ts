@@ -6,6 +6,7 @@ import { authenticate } from "../../middleware/auth";
 import { requireRole } from "../../middleware/rbac";
 import { writeAuditLog, diffSummary } from "../../lib/audit";
 import { invoiceSla } from "../../lib/sla";
+import { isNonInvoicedJobType } from "../../lib/jobTypes";
 import { jobListInclude, toJobDto } from "../jobs/jobs.dto";
 
 const router = Router({ mergeParams: true });
@@ -32,25 +33,45 @@ router.patch(
     });
     if (!job) throw new HttpError(404, "Job not found");
     if (!job.dispatch?.dispatchDate) {
-      throw new HttpError(400, "Cannot invoice a job that has not been dispatched yet");
+      throw new HttpError(400, "Cannot invoice or close a job that has not been dispatched yet");
     }
 
     const data = invoiceSchema.parse(req.body);
-    const effectiveInvoiceDate = data.invoiceDate ?? job.invoice?.invoiceDate ?? null;
-    const sla = invoiceSla(job.dispatch.dispatchDate, effectiveInvoiceDate);
-    const hasDelayReason = data.delayReason ?? job.invoice?.delayReason;
-    if (sla.status === "RED" && !hasDelayReason) {
-      throw new HttpError(400, "Delay reason is required: invoicing has exceeded the 7-day SLA target");
-    }
+    // Internal and warranty jobs are never invoiced: this step closes them on the closing date.
+    const noInvoice = isNonInvoicedJobType(job.jobType);
 
-    // Job auto-closes once invoicing is complete: default closingDate to invoiceDate if not supplied.
-    const closingDate = data.closingDate ?? (data.invoiceDate ? data.invoiceDate : undefined);
+    let write: Record<string, unknown>;
+    if (noInvoice) {
+      if (data.invoiceDate || data.invoiceNumber || data.invoiceAmount !== undefined) {
+        throw new HttpError(
+          400,
+          "Internal and warranty jobs aren't invoiced — change the job's Service Type if this one should be invoiced"
+        );
+      }
+      const closingDate = data.closingDate ?? job.invoice?.closingDate ?? null;
+      if (!closingDate) throw new HttpError(400, "Enter the closing date to close the job");
+      const sla = invoiceSla(job.dispatch.dispatchDate, closingDate);
+      if (sla.status === "RED" && !(data.delayReason ?? job.invoice?.delayReason)) {
+        throw new HttpError(400, "Delay reason is required: closing has exceeded the 7-day SLA target");
+      }
+      write = { ...data, closedWithoutInvoice: true, closingDate, invoiceDate: null, invoiceNumber: null, invoiceAmount: null };
+    } else {
+      const effectiveInvoiceDate = data.invoiceDate ?? job.invoice?.invoiceDate ?? null;
+      const sla = invoiceSla(job.dispatch.dispatchDate, effectiveInvoiceDate);
+      const hasDelayReason = data.delayReason ?? job.invoice?.delayReason;
+      if (sla.status === "RED" && !hasDelayReason) {
+        throw new HttpError(400, "Delay reason is required: invoicing has exceeded the 7-day SLA target");
+      }
+      // Job auto-closes once invoicing is complete: default closingDate to invoiceDate if not supplied.
+      const closingDate = data.closingDate ?? (data.invoiceDate ? data.invoiceDate : undefined);
+      write = { ...data, closedWithoutInvoice: false, closingDate };
+    }
 
     const before = job.invoice ?? {};
     const updated = await prisma.invoice.upsert({
       where: { jobId },
-      create: { jobId, ...data, closingDate },
-      update: { ...data, closingDate },
+      create: { jobId, ...write },
+      update: write,
     });
 
     await writeAuditLog({

@@ -1,25 +1,79 @@
-/*
- * Tailwind theme + utilities only — Preflight (Tailwind's global CSS reset)
- * is intentionally NOT imported here. MUI's <CssBaseline /> already resets
- * the whole app (see src/theme/ThemeProvider.tsx), and every existing page
- * still relies on MUI's own base styles. Running both resets together would
- * subtly change native button/input appearance on every MUI page, which
- * must stay untouched while the two systems coexist.
- *
- * Re-introduce `@import "tailwindcss/preflight.css" layer(base);` once MUI
- * is fully removed from the app.
- */
-@layer theme, base, components, utilities;
-@import "tailwindcss/theme.css" layer(theme);
-@import "tailwindcss/utilities.css" layer(utilities);
+@import "tailwindcss";
 
-/* Kept in sync by hand with src/theme/epirocBrand.ts — CSS can't import a
-   TS constant, so if those hex values ever change, update both places. */
+/* Dark mode is driven by a `dark` class on <html> (see src/theme/ThemeProvider.tsx). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Epiroc-only palette.
+ *
+ * `--color-*: initial` wipes Tailwind's default palette (blue, slate, black…),
+ * so only the colors declared below exist as utilities. A class such as
+ * `bg-black` or `text-blue-500` simply won't compile — that's the guard that
+ * keeps the app on-brand.
+ *
+ * Epiroc has no black: the darkest tone is a deep slate gray. Hex values are
+ * mirrored in src/theme/epirocBrand.ts (CSS can't import TS) for charts —
+ * update both places together.
+ */
 @theme {
-  --color-epiroc-yellow: #ffce00;
-  --color-epiroc-black: #1d1d1b;
-  --color-board-bg: #0b0e11;
-  --color-board-panel: #15191d;
+  --color-*: initial;
+
+  --color-white: #ffffff;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+
+  /* Epiroc yellow */
+  --color-yellow: #ffce00;
+  --color-yellow-hover: #f0c100;
+  --color-yellow-soft: #fff5cc;
+
+  /* Epiroc slate gray — built around the logo color (#415464 = gray-800); never black */
+  --color-gray-50: #f5f7f8;
+  --color-gray-100: #ebeef0;
+  --color-gray-200: #d9dee2;
+  --color-gray-300: #bcc5cc;
+  --color-gray-400: #94a1ab;
+  --color-gray-500: #758591;
+  --color-gray-600: #5b6b78;
+  --color-gray-700: #4a5c6a;
+  --color-gray-800: #415464;
+  --color-gray-900: #2f3e4a;
+  --color-gray-950: #24313b;
+
+  /* Functional status colors — used only for SLA / error / success state */
+  --color-success: #2e8540;
+  --color-success-soft: #e3f1e6;
+  --color-danger: #c4372c;
+  --color-danger-soft: #f8e3e1;
+  --color-success-light: #7cc68a; /* status text on dark surfaces */
+  --color-danger-light: #f0938a;
+
+  /* Inter Variable is bundled via @fontsource-variable/inter (imported in main.tsx). The whole app
+     uses this one family — including the TV board, so don't introduce font-mono/serif. */
+  --font-sans: "Inter Variable", "Inter", "Segoe UI", Roboto, Arial, sans-serif;
+  --font-mono: var(--font-sans);
+  --font-serif: var(--font-sans);
+
+  /* Shadows tinted with Epiroc slate instead of Tailwind's default black */
+  --shadow-sm: 0 1px 3px 0 rgb(47 62 74 / 0.1), 0 1px 2px -1px rgb(47 62 74 / 0.1);
+  --shadow-xl: 0 20px 25px -5px rgb(47 62 74 / 0.12), 0 8px 10px -6px rgb(47 62 74 / 0.12);
+  --shadow-2xl: 0 25px 50px -12px rgb(47 62 74 / 0.3);
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+  :root.dark {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-gray-50 font-sans text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
 }
 
 @keyframes board-progress {

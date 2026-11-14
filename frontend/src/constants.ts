@@ -2,7 +2,7 @@ import { JobType, Priority, Role, StageName, StageStatus } from "./types";
 
 export const ROLE_LABELS: Record<Role, string> = {
   STOREMAN: "Storeman",
-  PLANNER: "Planner",
+  PLANNER: "Component Planner",
   SUPERVISOR: "Supervisor",
   ADMIN: "Admin",
 };

@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
-import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField } from "@mui/material";
 import { Job } from "../../types";
 import { useUpdateJob } from "../../api/jobs";
 import { toDateInputValue } from "../../utils/date";
+import { Alert, Button, Dialog, TextField } from "../../components/ui";
 
 export type JobEditableField = "woNumber" | "poNumber" | "woNumberSetAt" | "jobCreatedDate";
 
@@ -60,16 +60,23 @@ export function JobFieldDialog({
   }
 
   return (
-    <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>
-        {label} — {job.referenceNumber}
-      </DialogTitle>
-      <DialogContent>
-        {error && (
-          <Alert severity="error" sx={{ mb: 2, mt: 1 }}>
-            {error}
-          </Alert>
-        )}
+    <Dialog
+      size="xs"
+      onClose={onClose}
+      title={`${label} — ${job.referenceNumber}`}
+      actions={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={handleSubmit(onSubmit)} loading={updateJob.isPending}>
+            {updateJob.isPending ? "Saving…" : "Save"}
+          </Button>
+        </>
+      }
+    >
+      <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-3">
+        {error && <Alert severity="error">{error}</Alert>}
         <Controller
           name="value"
           control={control}
@@ -79,28 +86,14 @@ export function JobFieldDialog({
               {...rhfField}
               autoFocus
               label={label}
-              fullWidth
               required
-              {...(isDate
-                ? {
-                    type: "date",
-                    InputLabelProps: { shrink: true },
-                    inputProps: dateConstraints(field, job),
-                  }
-                : {})}
-              sx={{ mt: 1 }}
+              {...(isDate ? { type: "date", ...dateConstraints(field, job) } : {})}
               error={!!fieldState.error}
               helperText={fieldState.error?.message}
             />
           )}
         />
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
-        <Button variant="contained" onClick={handleSubmit(onSubmit)} disabled={updateJob.isPending}>
-          {updateJob.isPending ? "Saving..." : "Save"}
-        </Button>
-      </DialogActions>
+      </form>
     </Dialog>
   );
 }

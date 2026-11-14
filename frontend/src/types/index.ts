@@ -36,6 +36,8 @@ export interface DerivedJobStatus {
   slaCompliant: boolean;
   stages: StageComputed[];
   isClosed: boolean;
+  /** Closed with no invoice (internal job). */
+  closedWithoutInvoice: boolean;
 }
 
 export interface UserSummary {
@@ -94,6 +96,8 @@ export interface Invoice {
   invoiceAmount: number | null;
   plannedClosingDate: string | null;
   closingDate: string | null;
+  /** Internal job closed with no invoice raised. */
+  closedWithoutInvoice: boolean | null;
   comments: string | null;
   delayReason: string | null;
 }
@@ -118,6 +122,9 @@ export interface Job {
   priority: Priority;
   jobCreatedDate: string;
   comments: string | null;
+  /** Invoice forecast: calendar month "YYYY-MM" and amount. */
+  forecastMonth: string | null;
+  forecastAmount: number | null;
   isLegacyImport: boolean;
   createdBy: UserSummary | null;
   quotation: Quotation | null;

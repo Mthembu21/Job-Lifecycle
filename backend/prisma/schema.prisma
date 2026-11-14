@@ -46,25 +46,29 @@ model User {
 }
 
 model Job {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  referenceNumber String   @unique
-  description     String
-  customer        String
-  serialNumber    String
-  partNumber      String?
+  id                  String    @id @default(auto()) @map("_id") @db.ObjectId
+  referenceNumber     String    @unique
+  description         String
+  customer            String
+  serialNumber        String
+  partNumber          String?
   machineNumber       String?
   machineSerialNumber String?
   customerRef         String?
   customerAccount     String?
   dateReceived        DateTime?
-  woNumber        String?
-  woNumberSetAt   DateTime?
-  poNumber        String?
-  jobType         JobType
-  poValue         Float
-  priority        Priority
-  jobCreatedDate  DateTime
-  comments        String?
+  woNumber            String?
+  woNumberSetAt       DateTime?
+  poNumber            String?
+  jobType             JobType
+  poValue             Float
+  priority            Priority
+  jobCreatedDate      DateTime
+  comments            String?
+
+  /// Planner's invoice forecast: the calendar month ("YYYY-MM") and amount they expect to invoice.
+  forecastMonth  String?
+  forecastAmount Float?
 
   isLegacyImport Boolean @default(false)
   legacySheetRow Json?
@@ -83,20 +87,20 @@ model Job {
 }
 
 model Quotation {
-  id                  String    @id @default(auto()) @map("_id") @db.ObjectId
-  jobId               String    @unique @db.ObjectId
-  job                 Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  evaluationDate       DateTime?
+  id                     String    @id @default(auto()) @map("_id") @db.ObjectId
+  jobId                  String    @unique @db.ObjectId
+  job                    Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  evaluationDate         DateTime?
   plannedDisassemblyDate DateTime?
-  epirocQuotationDate DateTime?
-  mcoNumber           String?
-  quotationAmount     Float?
-  quotedById          String?   @db.ObjectId
-  quotedBy            User?     @relation("QuotedBy", fields: [quotedById], references: [id])
-  comments            String?
-  delayReason         String?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  epirocQuotationDate    DateTime?
+  mcoNumber              String?
+  quotationAmount        Float?
+  quotedById             String?   @db.ObjectId
+  quotedBy               User?     @relation("QuotedBy", fields: [quotedById], references: [id])
+  comments               String?
+  delayReason            String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 }
 
 model Repair {
@@ -125,34 +129,36 @@ model Repair {
 }
 
 model Dispatch {
-  id             String    @id @default(auto()) @map("_id") @db.ObjectId
-  jobId          String    @unique @db.ObjectId
-  job            Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  id                  String    @id @default(auto()) @map("_id") @db.ObjectId
+  jobId               String    @unique @db.ObjectId
+  job                 Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
   dispatchRequestDate DateTime?
-  dispatchDate   DateTime?
-  courier        String?
-  trackingNumber String?
-  dispatchedById String?   @db.ObjectId
-  dispatchedBy   User?     @relation("DispatchedBy", fields: [dispatchedById], references: [id])
-  comments       String?
-  delayReason    String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  dispatchDate        DateTime?
+  courier             String?
+  trackingNumber      String?
+  dispatchedById      String?   @db.ObjectId
+  dispatchedBy        User?     @relation("DispatchedBy", fields: [dispatchedById], references: [id])
+  comments            String?
+  delayReason         String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 }
 
 model Invoice {
-  id             String    @id @default(auto()) @map("_id") @db.ObjectId
-  jobId          String    @unique @db.ObjectId
-  job            Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  invoiceNumber  String?
-  invoiceDate    DateTime?
-  invoiceAmount  Float?
-  plannedClosingDate DateTime?
-  closingDate    DateTime?
-  comments       String?
-  delayReason    String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id                   String    @id @default(auto()) @map("_id") @db.ObjectId
+  jobId                String    @unique @db.ObjectId
+  job                  Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  invoiceNumber        String?
+  invoiceDate          DateTime?
+  invoiceAmount        Float?
+  plannedClosingDate   DateTime?
+  closingDate          DateTime?
+  /// Internal job closed with no invoice raised (e.g. an internal customer). Closed on closingDate.
+  closedWithoutInvoice Boolean?
+  comments             String?
+  delayReason          String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 }
 
 model JobAuditLog {
@@ -166,4 +172,43 @@ model JobAuditLog {
   changedById String   @db.ObjectId
   changedBy   User     @relation(fields: [changedById], references: [id])
   changedAt   DateTime @default(now())
+}
+
+/// A month's invoice forecast exactly as it stood when the previous month ended. Written once when
+/// the month is frozen (see lib/forecast.ts) and never edited, so "forecast vs actual" can't drift.
+/// Not linked to Job, so it survives the job being deleted.
+model ForecastSnapshot {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  month           String /// "YYYY-MM"
+  jobId           String   @db.ObjectId
+  referenceNumber String
+  customer        String
+  amount          Float
+  createdAt       DateTime @default(now())
+
+  @@unique([month, jobId])
+  @@index([month])
+}
+
+/// Marks a month's forecast as frozen.
+model ForecastFreeze {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  month       String   @unique /// "YYYY-MM"
+  frozenAt    DateTime @default(now())
+  /// The month forecasting went live: there was no forecast before it began, so its comparison uses
+  /// the live forecast instead of a snapshot.
+  provisional Boolean  @default(false)
+}
+
+/// A planner's comment explaining a job's forecast outcome in a given month.
+model ForecastNote {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  month         String /// "YYYY-MM"
+  jobId         String   @db.ObjectId
+  comment       String
+  updatedById   String   @db.ObjectId
+  updatedByName String
+  updatedAt     DateTime @updatedAt
+
+  @@unique([month, jobId])
 }

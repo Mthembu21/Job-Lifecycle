@@ -12,6 +12,7 @@ import dispatchRoutes from "./modules/dispatch/dispatch.routes";
 import invoiceRoutes from "./modules/invoice/invoice.routes";
 import auditRoutes from "./modules/audit/audit.routes";
 import dashboardRoutes from "./modules/dashboard/dashboard.routes";
+import forecastRoutes from "./modules/forecast/forecast.routes";
 import importExportRoutes from "./modules/importExport/importExport.routes";
 import boardRoutes from "./modules/board/board.routes";
 
@@ -39,6 +40,7 @@ export function createApp() {
   app.use("/api/jobs/:jobId/invoice", invoiceRoutes);
   app.use("/api/jobs/:jobId/audit", auditRoutes);
   app.use("/api/dashboard", dashboardRoutes);
+  app.use("/api/forecast", forecastRoutes);
   app.use("/api/import-export", importExportRoutes);
   app.use("/api/board", boardRoutes);
 

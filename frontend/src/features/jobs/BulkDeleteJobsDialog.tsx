@@ -1,14 +1,6 @@
 import { useState } from "react";
-import {
-  Alert,
-  Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogContentText,
-  DialogTitle,
-} from "@mui/material";
 import { useBulkDeleteJobs } from "../../api/jobs";
+import { ConfirmDeleteDialog } from "../../components/ConfirmDeleteDialog";
 
 export function BulkDeleteJobsDialog({
   jobIds,
@@ -33,28 +25,15 @@ export function BulkDeleteJobsDialog({
   }
 
   return (
-    <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Delete {jobIds.length} Jobs</DialogTitle>
-      <DialogContent>
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        )}
-        <DialogContentText>
-          Delete <strong>{jobIds.length}</strong> selected job{jobIds.length === 1 ? "" : "s"}? This
-          permanently removes each job and all associated quotation, repair, dispatch, invoice, and audit
-          history. This cannot be undone.
-        </DialogContentText>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose} disabled={bulkDelete.isPending}>
-          Cancel
-        </Button>
-        <Button color="error" variant="contained" onClick={handleDelete} disabled={bulkDelete.isPending}>
-          {bulkDelete.isPending ? "Deleting..." : "Delete"}
-        </Button>
-      </DialogActions>
-    </Dialog>
+    <ConfirmDeleteDialog
+      title={`Delete ${jobIds.length} Jobs`}
+      error={error}
+      pending={bulkDelete.isPending}
+      onConfirm={handleDelete}
+      onClose={onClose}
+    >
+      Delete <strong>{jobIds.length}</strong> selected job{jobIds.length === 1 ? "" : "s"}? This permanently removes
+      each job and all associated quotation, repair, dispatch, invoice, and audit history. This cannot be undone.
+    </ConfirmDeleteDialog>
   );
 }
