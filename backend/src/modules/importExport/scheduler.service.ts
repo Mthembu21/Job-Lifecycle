@@ -7,6 +7,7 @@ import {
   DATA_START_ROW,
   HEADERS,
   MappedSchedulerRow,
+  normalizeHeader,
   SCHEDULER_SHEET_NAME,
   mapSchedulerRow,
   rowHasJobData,
@@ -15,7 +16,6 @@ import { locateExtraColumns } from "./scheduler.extras";
 import { ensureForecastsFrozen } from "../../lib/forecast";
 import { isNonInvoicedJobType } from "../../lib/jobTypes";
 
-const normalizeHeader = (v: unknown) => String(v ?? "").trim().toUpperCase();
 
 /**
  * Index of the first data row. The original tracker has its column headers on row 2, but the app's
@@ -173,15 +173,9 @@ export async function runSchedulerImport(
         ...(mapped.dispatch && {
           dispatch: { create: { ...dispatch, dispatchedById: userId(dispatchedByName) } },
         }),
+        // (Internal / warranty jobs with a closing date and no invoice read as closed — see statusEngine.)
         ...(mapped.invoice && {
-          invoice: {
-            create: {
-              ...mapped.invoice,
-              // Internal / warranty jobs with a closing date and no invoice are closed without invoice.
-              closedWithoutInvoice:
-                isNonInvoicedJobType(job.jobType) && !!mapped.invoice.closingDate && !mapped.invoice.invoiceDate,
-            },
-          },
+          invoice: { create: { ...mapped.invoice } },
         }),
       },
     });

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { StageKey, useUpdateStage } from "../../api/jobs";
+import { apiErrorMessage } from "../../api/client";
 
 /**
  * The backend is the single source of truth for whether a stage has breached its SLA
@@ -19,7 +20,7 @@ export function useStageSubmit(jobId: string, stage: StageKey, onSuccess: () => 
       setRequireDelayReason(false);
       onSuccess();
     } catch (err: any) {
-      const message = err?.response?.data?.error ?? "Failed to save changes";
+      const message = apiErrorMessage(err, "Failed to save changes");
       setError(message);
       if (err?.response?.status === 400 && /delay reason/i.test(message)) {
         setRequireDelayReason(true);

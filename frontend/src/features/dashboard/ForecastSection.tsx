@@ -6,8 +6,11 @@ import { useAuth } from "../../auth/AuthContext";
 import { canEditForecast } from "../../auth/permissions";
 import { formatCurrency } from "../../utils/currency";
 import { formatDate } from "../../utils/date";
-import { Alert, Badge, BadgeTone, Button, Card, Segmented, SectionHeading, cn } from "../../components/ui";
-import { monthLabel } from "./MonthPicker";
+import { Alert, Badge, BadgeTone, Button, Card, IconButton, Segmented, SectionHeading, TextField, cn } from "../../components/ui";
+import { monthLabel } from "../../utils/month";
+import { plural } from "../../utils/text";
+import { StatTile } from "./StatTile";
+import { EmptyRow, STICKY_THEAD, TH, TD as TD_BASE } from "../../components/ui/Table";
 
 const OUTCOME: Record<ForecastOutcome, { label: string; tone: BadgeTone }> = {
   INVOICED: { label: "Invoiced", tone: "success" },
@@ -27,23 +30,14 @@ const FACTOR_CLASS = {
 
 type Filter = "all" | "open" | "invoiced" | "unplanned";
 
-const TH = "px-3 py-2 text-left text-xs font-semibold tracking-wide whitespace-nowrap text-gray-600 uppercase dark:text-gray-300";
-const TD = "px-3 py-2.5 align-top";
+const FILTERS: Record<Filter, (r: ForecastRow) => boolean> = {
+  all: () => true,
+  open: (r) => r.outcome === "SLIPPED" || r.outcome === "PENDING" || r.outcome === "CLOSED_NO_INVOICE",
+  invoiced: (r) => r.outcome === "INVOICED" || r.outcome === "INVOICED_EARLY",
+  unplanned: (r) => r.outcome === "UNPLANNED",
+};
 
-function Tile({ label, value, sub, tone = "default" }: { label: string; value: string; sub?: string; tone?: "default" | "good" | "bad" }) {
-  return (
-    <div
-      className={cn(
-        "rounded-xl border bg-white p-4 dark:bg-gray-900",
-        tone === "bad" ? "border-l-4 border-gray-200 border-l-danger dark:border-gray-800" : tone === "good" ? "border-l-4 border-gray-200 border-l-success dark:border-gray-800" : "border-gray-200 dark:border-gray-800"
-      )}
-    >
-      <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{label}</p>
-      <p className="mt-1 text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-50">{value}</p>
-      {sub && <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{sub}</p>}
-    </div>
-  );
-}
+const TD = `${TD_BASE} align-top`;
 
 export function ForecastSection({ report }: { report: ForecastReport }) {
   const [filter, setFilter] = useState<Filter>("all");
@@ -61,12 +55,16 @@ export function ForecastSection({ report }: { report: ForecastReport }) {
     );
   }
 
-  const isOpen = (r: ForecastRow) => r.outcome === "SLIPPED" || r.outcome === "PENDING" || r.outcome === "CLOSED_NO_INVOICE";
-  const rows = report.rows.filter((r) =>
-    filter === "all" ? true : filter === "open" ? isOpen(r) : filter === "invoiced" ? r.outcome === "INVOICED" || r.outcome === "INVOICED_EARLY" : r.outcome === "UNPLANNED"
-  );
+  const rows = report.rows.filter(FILTERS[filter]);
   const noForecast = s.forecastCount === 0;
   const aboveForecast = !noForecast && s.aboveForecastTotal > 0;
+
+  // The fourth tile: the gap to the forecast (forecast − everything invoiced, unplanned included).
+  let gapSub: string | undefined;
+  if (noForecast) gapSub = "No forecast set for this month";
+  else if (s.notInvoicedCount > 0)
+    gapSub = `${plural(s.notInvoicedCount, "forecast job")} ${report.isCurrentMonth ? "not yet invoiced" : "not invoiced"} (${formatCurrency(s.notInvoicedTotal)})`;
+  else gapSub = "All forecast jobs invoiced";
   const maxCause = Math.max(1, ...report.causes.map((c) => c.amount));
 
   return (
@@ -86,44 +84,31 @@ export function ForecastSection({ report }: { report: ForecastReport }) {
       )}
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Tile
+        <StatTile
           label="Forecast"
           value={formatCurrency(s.forecastTotal)}
-          sub={`${s.forecastCount} job${s.forecastCount === 1 ? "" : "s"}${
+          sub={`${plural(s.forecastCount, "job")}${
             Math.round(s.latestForecastTotal) !== Math.round(s.forecastTotal) ? ` · latest ${formatCurrency(s.latestForecastTotal)}` : ""
           }`}
         />
-        <Tile
+        <StatTile
           label="Invoiced"
           value={formatCurrency(s.invoicedTotal)}
-          sub={`${s.invoicedCount} job${s.invoicedCount === 1 ? "" : "s"}${s.unplannedCount ? ` · incl. ${formatCurrency(s.unplannedTotal)} unplanned` : ""}`}
+          sub={`${plural(s.invoicedCount, "job")}${s.unplannedCount ? ` · incl. ${formatCurrency(s.unplannedTotal)} unplanned` : ""}`}
         />
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-          <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Invoiced vs forecast</p>
-          <p className="mt-1 text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-50">
-            {s.achievedPercent === null ? "—" : `${s.achievedPercent}%`}
-          </p>
+        <StatTile label="Invoiced vs forecast" value={s.achievedPercent === null ? "—" : `${s.achievedPercent}%`}>
           <div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
             <div
               className={cn("h-full rounded-full", (s.achievedPercent ?? 0) >= 100 ? "bg-success" : "bg-yellow")}
               style={{ width: `${Math.min(100, s.achievedPercent ?? 0)}%` }}
             />
           </div>
-        </div>
-        {/* Gap to the forecast: forecast − everything invoiced (unplanned invoices count too). */}
-        <Tile
+        </StatTile>
+        <StatTile
           label={aboveForecast ? "Above forecast" : report.isCurrentMonth ? "Still to invoice" : "Short of forecast"}
           value={noForecast ? "—" : formatCurrency(aboveForecast ? s.aboveForecastTotal : s.remainingTotal)}
-          sub={
-            noForecast
-              ? "No forecast set for this month"
-              : s.notInvoicedCount > 0
-              ? `${s.notInvoicedCount} forecast job${s.notInvoicedCount === 1 ? "" : "s"} ${report.isCurrentMonth ? "not yet invoiced" : "not invoiced"} (${formatCurrency(s.notInvoicedTotal)})`
-              : s.forecastCount > 0
-                ? "All forecast jobs invoiced"
-                : undefined
-          }
-          tone={aboveForecast ? "good" : !report.isCurrentMonth && s.remainingTotal > 0 ? "bad" : "default"}
+          sub={gapSub}
+          tone={aboveForecast ? "good" : !report.isCurrentMonth && s.remainingTotal > 0 ? "critical" : "default"}
         />
       </div>
 
@@ -141,7 +126,7 @@ export function ForecastSection({ report }: { report: ForecastReport }) {
                   <div className="h-full rounded-full bg-gray-700 dark:bg-gray-300" style={{ width: `${(c.amount / maxCause) * 100}%` }} />
                 </div>
                 <span className="text-right whitespace-nowrap tabular-nums text-gray-900 dark:text-gray-100">
-                  {formatCurrency(c.amount)} <span className="text-gray-500">· {c.count} job{c.count === 1 ? "" : "s"}</span>
+                  {formatCurrency(c.amount)} <span className="text-gray-500">· {plural(c.count, "job")}</span>
                 </span>
               </div>
             ))}
@@ -149,8 +134,7 @@ export function ForecastSection({ report }: { report: ForecastReport }) {
           {report.noWo.count > 0 && (
             <p className="mt-3 flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300">
               <AlertTriangle className="size-4 text-yellow" />
-              {report.noWo.count} of these job{report.noWo.count === 1 ? "" : "s"} ({formatCurrency(report.noWo.amount)}) still had no WO
-              number.
+              {plural(report.noWo.count, "job")} here ({formatCurrency(report.noWo.amount)}) still had no WO number.
             </p>
           )}
         </Card>
@@ -173,7 +157,7 @@ export function ForecastSection({ report }: { report: ForecastReport }) {
         </div>
         <div className="max-h-[560px] overflow-auto">
           <table className="w-full text-sm">
-            <thead className="sticky top-0 z-10 bg-gray-50 shadow-[0_1px_0_var(--color-gray-200)] dark:bg-gray-800 dark:shadow-[0_1px_0_var(--color-gray-700)]">
+            <thead className={STICKY_THEAD}>
               <tr>
                 <th className={TH}>Job</th>
                 <th className={TH}>Outcome</th>
@@ -185,11 +169,9 @@ export function ForecastSection({ report }: { report: ForecastReport }) {
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
               {rows.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-3 py-10 text-center text-gray-500 dark:text-gray-400">
+                <EmptyRow cols={6}>
                     {report.rows.length === 0 ? `Nothing was forecast or invoiced in ${label}.` : "No jobs in this view."}
-                  </td>
-                </tr>
+                </EmptyRow>
               )}
               {rows.map((r) => (
                 <ForecastTableRow key={r.jobId} row={r} month={report.month} />
@@ -266,14 +248,15 @@ function CommentCell({ row, month }: { row: ForecastRow; month: string }) {
           setEditing(false);
         }}
       >
-        <textarea
+        <TextField
+          multiline
+          hideLabel
+          label={`Comment for ${row.referenceNumber}`}
           autoFocus
-          rows={2}
           maxLength={1000}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder="e.g. Customer asked to invoice in January"
-          className="w-full rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-yellow focus:ring-4 focus:ring-yellow/30 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
         />
         {save.isError && <p className="text-xs text-danger">Couldn't save — try again.</p>}
         <div className="flex gap-2">
@@ -302,9 +285,9 @@ function CommentCell({ row, month }: { row: ForecastRow; month: string }) {
         <p className="mt-0.5 flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
           {row.note.by} · {formatDate(row.note.at)}
           {canEdit && (
-            <button type="button" onClick={() => setEditing(true)} className="ml-1 rounded p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700" aria-label="Edit comment" title="Edit comment">
-              <Pencil className="size-3" />
-            </button>
+            <IconButton size="sm" label="Edit comment" onClick={() => setEditing(true)}>
+              <Pencil />
+            </IconButton>
           )}
         </p>
       </div>
@@ -312,13 +295,9 @@ function CommentCell({ row, month }: { row: ForecastRow; month: string }) {
   }
 
   return canEdit ? (
-    <button
-      type="button"
-      onClick={() => setEditing(true)}
-      className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
-    >
-      <MessageSquarePlus className="size-3.5" /> Add comment
-    </button>
+    <Button size="sm" variant="ghost" icon={<MessageSquarePlus className="size-4" />} onClick={() => setEditing(true)}>
+      Add comment
+    </Button>
   ) : (
     <span className="text-xs text-gray-400">—</span>
   );

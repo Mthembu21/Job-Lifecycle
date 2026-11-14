@@ -23,7 +23,6 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
-
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -40,5 +39,7 @@ apiClient.interceptors.response.use(
   }
 );
 
-
-
+/** The error message the API sent back (`{ error }`), or `fallback` when there isn't one. */
+export function apiErrorMessage(err: unknown, fallback: string): string {
+  return axios.isAxiosError<{ error?: string }>(err) ? err.response?.data?.error ?? fallback : fallback;
+}

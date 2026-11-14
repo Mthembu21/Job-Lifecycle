@@ -24,6 +24,8 @@ export interface TextFieldProps extends Omit<InputHTMLAttributes<HTMLInputElemen
   /** Renders a native <select>; pass <option> children. */
   select?: boolean;
   size?: "sm" | "md";
+  /** Keep the label for screen readers but don't show it (e.g. inputs inside a table row). */
+  hideLabel?: boolean;
   children?: ReactNode;
   onChange?: AnyChange;
 }
@@ -34,7 +36,7 @@ export interface TextFieldProps extends Omit<InputHTMLAttributes<HTMLInputElemen
  */
 export const TextField = forwardRef<HTMLInputElement & HTMLTextAreaElement & HTMLSelectElement, TextFieldProps>(
   function TextField(
-    { label, helperText, error, multiline, minRows = 2, select, size = "md", className, children, required, id, value, ...rest },
+    { label, helperText, error, multiline, minRows = 2, select, size = "md", hideLabel, className, children, required, id, value, ...rest },
     ref
   ) {
     const autoId = useId();
@@ -86,7 +88,10 @@ export const TextField = forwardRef<HTMLInputElement & HTMLTextAreaElement & HTM
 
     return (
       <div className={cn("flex min-w-0 flex-col gap-1.5", className)}>
-        <label htmlFor={fieldId} className="text-xs font-semibold tracking-wide text-gray-700 dark:text-gray-300">
+        <label
+          htmlFor={fieldId}
+          className={cn("text-xs font-semibold tracking-wide text-gray-700 dark:text-gray-300", hideLabel && "sr-only")}
+        >
           {label}
           {required && <span className="ml-0.5 text-danger">*</span>}
         </label>

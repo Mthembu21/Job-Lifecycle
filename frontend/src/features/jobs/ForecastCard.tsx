@@ -8,21 +8,15 @@ import { formatCurrency } from "../../utils/currency";
 import { JOB_TYPE_LABELS } from "../../constants";
 import { defaultForecastAmount } from "../../utils/forecast";
 import { isNonInvoicedJobType } from "../../utils/jobTypes";
-import { Alert, Button, Card, CardTitle, Dialog, IconButton, TextField } from "../../components/ui";
-import { currentMonthKey, monthLabel } from "../dashboard/MonthPicker";
-
-/** PO value, else quotation amount; blank when neither is known yet. */
-function defaultAmount(job: Job): number | "" {
-  return defaultForecastAmount(job) || "";
-}
+import { Button, Card, CardTitle, IconButton, TextField } from "../../components/ui";
+import { FormDialog } from "../../components/FormDialog";
+import { currentMonthKey, monthLabel, monthRange } from "../../utils/month";
+import { apiErrorMessage } from "../../api/client";
 
 /** Months offered: 2 back (late corrections) to 12 ahead. */
 function monthOptions(selected: string | null): string[] {
-  const now = new Date();
-  const months: string[] = [];
-  for (let i = -2; i <= 12; i++) months.push(currentMonthKey(new Date(now.getFullYear(), now.getMonth() + i, 1)));
-  if (selected && !months.includes(selected)) months.unshift(selected);
-  return months;
+  const months = monthRange(-2, 12);
+  return selected && !months.includes(selected) ? [selected, ...months] : months;
 }
 
 export function ForecastCard({ job }: { job: Job }) {
@@ -79,9 +73,14 @@ export function ForecastCard({ job }: { job: Job }) {
 function ForecastDialog({ job, onClose }: { job: Job; onClose: () => void }) {
   const updateJob = useUpdateJob(job.id);
   const [month, setMonth] = useState(job.forecastMonth ?? currentMonthKey());
-  const [amount, setAmount] = useState<number | "">(job.forecastAmount ?? defaultAmount(job));
+  // Pre-filled from the PO value, else the quotation amount (blank when neither is known yet).
+  const [amount, setAmount] = useState<number | "">(job.forecastAmount ?? (defaultForecastAmount(job) || ""));
   const [error, setError] = useState<string | null>(null);
-  const usedQuoteFallback = !job.forecastAmount && !(Number(job.poValue) > 0) && amount !== "";
+
+  let amountHint: string | undefined;
+  if (job.forecastAmount === null && amount !== "") {
+    amountHint = Number(job.poValue) > 0 ? "Pre-filled from the PO value" : "Pre-filled from the quotation amount (no PO value yet)";
+  }
 
   async function save(clear = false) {
     setError(null);
@@ -94,70 +93,49 @@ function ForecastDialog({ job, onClose }: { job: Job; onClose: () => void }) {
         clear ? { forecastMonth: null, forecastAmount: null } : { forecastMonth: month, forecastAmount: Number(amount) }
       );
       onClose();
-    } catch (err: any) {
-      setError(err?.response?.data?.error ?? "Failed to save forecast");
+    } catch (err) {
+      setError(apiErrorMessage(err, "Failed to save forecast"));
     }
   }
 
   return (
-    <Dialog
+    <FormDialog
       size="xs"
+      columns={1}
       title={`Invoice Forecast — ${job.referenceNumber}`}
+      error={error}
+      submitting={updateJob.isPending}
+      onSave={() => save()}
       onClose={onClose}
-      actions={
-        <>
-          {job.forecastMonth && (
-            <Button variant="ghost" className="mr-auto text-danger" onClick={() => save(true)} disabled={updateJob.isPending}>
-              Remove forecast
-            </Button>
-          )}
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
+      extraActions={
+        job.forecastMonth && (
+          <Button variant="ghost" className="mr-auto text-danger" onClick={() => save(true)} disabled={updateJob.isPending}>
+            Remove forecast
           </Button>
-          <Button variant="primary" onClick={() => save()} loading={updateJob.isPending}>
-            Save
-          </Button>
-        </>
+        )
       }
     >
-      <form
-        className="flex flex-col gap-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          save();
-        }}
-      >
-        {error && <Alert severity="error">{error}</Alert>}
-        <TextField select label="Expected invoice month" value={month} onChange={(e) => setMonth(e.target.value)} required>
-          {monthOptions(job.forecastMonth).map((m) => (
-            <option key={m} value={m}>
-              {monthLabel(m)}
-            </option>
-          ))}
-        </TextField>
-        <TextField
-          label="Forecast amount (R)"
-          type="number"
-          min={0}
-          step="0.01"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value === "" ? "" : Number(e.target.value))}
-          required
-          helperText={
-            job.forecastAmount !== null
-              ? undefined
-              : usedQuoteFallback
-                ? "Pre-filled from the quotation amount (no PO value yet)"
-                : Number(job.poValue) > 0
-                  ? "Pre-filled from the PO value"
-                  : undefined
-          }
-        />
-        <p className="text-xs text-gray-500 dark:text-gray-400">
-          Each month's forecast is locked when the previous month ends — later changes show as the latest forecast but
-          don't change what the month is measured against.
-        </p>
-      </form>
-    </Dialog>
+      <TextField select label="Expected invoice month" value={month} onChange={(e) => setMonth(e.target.value)} required>
+        {monthOptions(job.forecastMonth).map((m) => (
+          <option key={m} value={m}>
+            {monthLabel(m)}
+          </option>
+        ))}
+      </TextField>
+      <TextField
+        label="Forecast amount (R)"
+        type="number"
+        min={0}
+        step="0.01"
+        value={amount}
+        onChange={(e) => setAmount(e.target.value === "" ? "" : Number(e.target.value))}
+        required
+        helperText={amountHint}
+      />
+      <p className="text-xs text-gray-500 dark:text-gray-400">
+        Each month's forecast is locked when the previous month ends — later changes show as the latest forecast but
+        don't change what the month is measured against.
+      </p>
+    </FormDialog>
   );
 }

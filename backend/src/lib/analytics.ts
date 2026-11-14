@@ -1,51 +1,21 @@
 import { JobDto } from "../modules/jobs/jobs.dto";
-import { StageName } from "./statusEngine";
 import { isNonInvoicedJobType } from "./jobTypes";
-
-const JOB_TYPE_LABELS: Record<string, string> = {
-  WARRANTY: "Warranty",
-  CUSTOMER_REPAIR: "Customer Repair",
-  INTERNAL: "Internal",
-  SERVICE: "Service",
-  REBUILD: "Rebuild",
-  INSURANCE: "Insurance",
-  OTHER: "Other",
-};
-
-const STAGE_LABELS: Record<StageName, string> = {
-  QUOTATION: "Quotation",
-  AWAITING_PO: "Awaiting PO",
-  REPAIR: "Repair",
-  DISPATCH: "Dispatch",
-  INVOICING: "Invoicing",
-  CLOSED: "Closed",
-};
-
-const STAGE_ORDER: StageName[] = ["QUOTATION", "AWAITING_PO", "REPAIR", "DISPATCH", "INVOICING", "CLOSED"];
-const SLA_STAGE_ORDER: Exclude<StageName, "CLOSED">[] = [
-  "QUOTATION",
-  "AWAITING_PO",
-  "REPAIR",
-  "DISPATCH",
-  "INVOICING",
-];
+import { JOB_TYPE_LABELS, SLA_STAGES, STAGE_LABELS, STAGE_ORDER, jobValue, toNumber } from "./labels";
+import { monthKeyOf } from "./months";
 
 interface Bucket {
   label: string;
   value: number;
 }
 
-function toNumber(value: unknown): number {
-  return value === null || value === undefined ? 0 : Number(value);
-}
-
-function daysBetween(from: string | Date, to: string | Date): number {
+/** Whole days between two dates, rounded, never negative. */
+export function wholeDaysBetween(from: string | Date, to: string | Date): number {
   const ms = new Date(to).getTime() - new Date(from).getTime();
   return Math.max(0, Math.round(ms / 86_400_000));
 }
 
-function monthKey(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+function average(values: number[]): number {
+  return values.length === 0 ? 0 : Math.round(values.reduce((sum, v) => sum + v, 0) / values.length);
 }
 
 function monthLabel(key: string): string {
@@ -56,12 +26,13 @@ function monthLabel(key: string): string {
 function lastNMonthKeys(n: number, now: Date = new Date()): string[] {
   const keys: string[] = [];
   for (let i = n - 1; i >= 0; i--) {
-    keys.push(monthKey(new Date(now.getFullYear(), now.getMonth() - i, 1)));
+    keys.push(monthKeyOf(new Date(now.getFullYear(), now.getMonth() - i, 1)));
   }
   return keys;
 }
 
-function weekKey(date: Date): string {
+/** Monday of the date's week, as an ISO date ("2026-11-09"). */
+export function weekKey(date: Date): string {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   const day = d.getUTCDay() || 7;
   d.setUTCDate(d.getUTCDate() - day + 1);
@@ -88,16 +59,30 @@ function countBy<T extends string>(items: T[], order: readonly T[], labels: Reco
   return order.map((key) => ({ label: labels[key], value: counts.get(key) ?? 0 }));
 }
 
-/** Value of a job with no invoice amount: PO value, else quotation amount. */
-function noInvoiceValue(j: JobDto): number {
-  return toNumber(j.poValue) || toNumber(j.quotation?.quotationAmount);
+/**
+ * One trend series: totals per bucket key in a single pass over the jobs. `keyOf` places a job in a
+ * bucket (null = not counted); `valueOf` is what it adds (default 1, i.e. a count).
+ */
+function trendSeries(
+  jobs: JobDto[],
+  keys: string[],
+  label: (key: string) => string,
+  keyOf: (j: JobDto) => string | null,
+  valueOf: (j: JobDto) => number = () => 1
+): Bucket[] {
+  const totals = new Map<string, number>();
+  for (const j of jobs) {
+    const key = keyOf(j);
+    if (key) totals.set(key, (totals.get(key) ?? 0) + valueOf(j));
+  }
+  return keys.map((key) => ({ label: label(key), value: totals.get(key) ?? 0 }));
 }
 
 /** Count / value of jobs closed without invoice, split into internal and warranty. */
 export function closedWithoutInvoiceKpis(closedNoInvoice: JobDto[]) {
   const internal = closedNoInvoice.filter((j) => j.jobType === "INTERNAL");
   const warranty = closedNoInvoice.filter((j) => j.jobType === "WARRANTY");
-  const total = (xs: JobDto[]) => xs.reduce((sum, j) => sum + noInvoiceValue(j), 0);
+  const total = (xs: JobDto[]) => xs.reduce((sum, j) => sum + jobValue(j), 0);
   return {
     closedWithoutInvoiceCount: closedNoInvoice.length,
     closedWithoutInvoiceValue: total(closedNoInvoice),
@@ -115,221 +100,100 @@ export interface SummaryOptions {
   weekKeys?: string[];
 }
 
-export { monthKey, weekKey };
-
 export function buildDashboardSummary(jobs: JobDto[], opts: SummaryOptions = {}) {
   const anchor = opts.anchor ?? new Date();
   const openJobs = jobs.filter((j) => !j.status.isClosed);
   const closedJobs = jobs.filter((j) => j.status.isClosed);
-  const delayedJobs = jobs.filter((j) => j.status.currentStatus === "DELAYED");
+  const openNonInvoiced = openJobs.filter((j) => isNonInvoicedJobType(j.jobType));
+  const atStage = (stage: string) => jobs.filter((j) => j.status.currentStage === stage).length;
+  const sumOf = (xs: JobDto[], valueOf: (j: JobDto) => number) => xs.reduce((sum, j) => sum + valueOf(j), 0);
 
-  const totalOpenJobValue = openJobs.reduce((sum, j) => sum + toNumber(j.poValue), 0);
-  const totalClosedJobValue = closedJobs.reduce((sum, j) => sum + toNumber(j.poValue), 0);
-  const totalInvoicedValue = jobs.reduce((sum, j) => sum + toNumber(j.invoice?.invoiceAmount), 0);
-  const totalRepairValue = jobs.reduce(
-    (sum, j) => sum + toNumber(j.repair?.totalRepairCost ?? j.repair?.partsCost),
-    0
-  );
+  const totalOpenJobValue = sumOf(openJobs, (j) => toNumber(j.poValue));
+  const totalInvoicedValue = sumOf(jobs, (j) => toNumber(j.invoice?.invoiceAmount));
 
   const kpis = {
     totalJobsCreated: jobs.length,
-    waitingForQuotation: jobs.filter((j) => j.status.currentStage === "QUOTATION").length,
-    waitingForPO: jobs.filter((j) => j.status.currentStage === "AWAITING_PO").length,
-    inRepair: jobs.filter((j) => j.status.currentStage === "REPAIR").length,
-    readyForDispatch: jobs.filter((j) => j.status.currentStage === "DISPATCH").length,
-    awaitingInvoice: jobs.filter((j) => j.status.currentStage === "INVOICING").length,
+    waitingForQuotation: atStage("QUOTATION"),
+    waitingForPO: atStage("AWAITING_PO"),
+    inRepair: atStage("REPAIR"),
+    readyForDispatch: atStage("DISPATCH"),
+    awaitingInvoice: atStage("INVOICING"),
     closedJobs: closedJobs.length,
     jobsInvoiced: jobs.filter((j) => j.invoice?.invoiceDate).length,
     // Internal / warranty jobs closed with no invoice — valued at PO value, else quotation amount.
     ...closedWithoutInvoiceKpis(closedJobs.filter((j) => j.status.closedWithoutInvoice)),
     // Open internal / warranty work (part of the open job value, but never invoiced).
-    openNonInvoicedCount: openJobs.filter((j) => isNonInvoicedJobType(j.jobType)).length,
-    openNonInvoicedValue: openJobs
-      .filter((j) => isNonInvoicedJobType(j.jobType))
-      .reduce((sum, j) => sum + toNumber(j.poValue), 0),
-    delayedJobs: delayedJobs.length,
+    openNonInvoicedCount: openNonInvoiced.length,
+    openNonInvoicedValue: sumOf(openNonInvoiced, (j) => toNumber(j.poValue)),
+    delayedJobs: jobs.filter((j) => j.status.currentStatus === "DELAYED").length,
     totalOpenJobValue,
     totalInvoicedValue,
-    avgTurnaroundDays:
-      closedJobs.length === 0
-        ? 0
-        : Math.round(closedJobs.reduce((sum, j) => sum + j.status.totalJobAge, 0) / closedJobs.length),
+    avgTurnaroundDays: average(closedJobs.map((j) => j.status.totalJobAge)),
     slaCompliancePercent:
       jobs.length === 0 ? 100 : Math.round((jobs.filter((j) => j.status.slaCompliant).length / jobs.length) * 100),
     jobsAwaitingWoNumber: openJobs.filter((j) => !j.woNumber).length,
-    avgDaysToWoNumber: (() => {
-      const withWoNumber = jobs.filter((j) => j.woNumberSetAt);
-      if (withWoNumber.length === 0) return 0;
-      return Math.round(
-        withWoNumber.reduce((sum, j) => sum + daysBetween(j.jobCreatedDate, j.woNumberSetAt!), 0) /
-          withWoNumber.length
-      );
-    })(),
+    avgDaysToWoNumber: average(
+      jobs.filter((j) => j.woNumberSetAt).map((j) => wholeDaysBetween(j.jobCreatedDate, j.woNumberSetAt!))
+    ),
   };
 
-  const jobsByType = countBy(
-    jobs.map((j) => j.jobType),
-    Object.keys(JOB_TYPE_LABELS),
-    JOB_TYPE_LABELS
-  );
-
-  const jobsByStage = countBy(
-    jobs.map((j) => j.status.currentStage),
-    STAGE_ORDER,
-    STAGE_LABELS
-  );
-
-  const avgDaysPerStage = SLA_STAGE_ORDER.map((stageName) => {
-    const completedDurations = jobs
+  const avgDaysPerStage = SLA_STAGES.map((stageName) => {
+    const completed = jobs
       .map((j) => j.status.stages.find((s) => s.name === stageName))
       .filter((s) => s && s.status === "COMPLETED" && s.sla.days !== null);
-    const avgDays =
-      completedDurations.length === 0
-        ? 0
-        : Math.round(
-            completedDurations.reduce((sum, s) => sum + (s!.sla.days ?? 0), 0) / completedDurations.length
-          );
-    const target = completedDurations[0]?.sla.target ?? 0;
-    return { label: STAGE_LABELS[stageName], actualDays: avgDays, targetDays: target };
+    return {
+      label: STAGE_LABELS[stageName],
+      actualDays: average(completed.map((s) => s!.sla.days ?? 0)),
+      targetDays: completed[0]?.sla.target ?? 0,
+    };
   });
 
   const valueBreakdown: Bucket[] = [
     { label: "Open Job Value", value: totalOpenJobValue },
-    { label: "Closed Job Value", value: totalClosedJobValue },
-    { label: "Repair Value", value: totalRepairValue },
+    { label: "Closed Job Value", value: sumOf(closedJobs, (j) => toNumber(j.poValue)) },
+    { label: "Repair Value", value: sumOf(jobs, (j) => toNumber(j.repair?.totalRepairCost ?? j.repair?.partsCost)) },
     { label: "Invoiced Value", value: totalInvoicedValue },
   ];
 
   const monthKeys = lastNMonthKeys(12, anchor);
   const weekKeys = opts.weekKeys ?? lastNWeekKeys(12, anchor);
-
-  const jobsCreatedByMonth: Bucket[] = monthKeys.map((key) => ({
-    label: monthLabel(key),
-    value: jobs.filter((j) => monthKey(new Date(j.jobCreatedDate)) === key).length,
-  }));
-  const jobsCreatedByWeek: Bucket[] = weekKeys.map((key) => ({
-    label: weekLabel(key),
-    value: jobs.filter((j) => weekKey(new Date(j.jobCreatedDate)) === key).length,
-  }));
-
-  const invoiceValueByMonth: Bucket[] = monthKeys.map((key) => ({
-    label: monthLabel(key),
-    value: jobs
-      .filter((j) => j.invoice?.invoiceDate && monthKey(new Date(j.invoice.invoiceDate)) === key)
-      .reduce((sum, j) => sum + toNumber(j.invoice?.invoiceAmount), 0),
-  }));
-  const jobsInvoicedByMonth: Bucket[] = monthKeys.map((key) => ({
-    label: monthLabel(key),
-    value: jobs.filter((j) => j.invoice?.invoiceDate && monthKey(new Date(j.invoice.invoiceDate)) === key).length,
-  }));
-  const jobsInvoicedByWeek: Bucket[] = weekKeys.map((key) => ({
-    label: weekLabel(key),
-    value: jobs.filter((j) => j.invoice?.invoiceDate && weekKey(new Date(j.invoice.invoiceDate)) === key).length,
-  }));
-  const jobValueByMonth: Bucket[] = monthKeys.map((key) => ({
-    label: monthLabel(key),
-    value: jobs
-      .filter((j) => monthKey(new Date(j.jobCreatedDate)) === key)
-      .reduce((sum, j) => sum + toNumber(j.poValue), 0),
-  }));
-  const invoiceValueByWeek: Bucket[] = weekKeys.map((key) => ({
-    label: weekLabel(key),
-    value: jobs
-      .filter((j) => j.invoice?.invoiceDate && weekKey(new Date(j.invoice.invoiceDate)) === key)
-      .reduce((sum, j) => sum + toNumber(j.invoice?.invoiceAmount), 0),
-  }));
-  const jobValueByWeek: Bucket[] = weekKeys.map((key) => ({
-    label: weekLabel(key),
-    value: jobs
-      .filter((j) => weekKey(new Date(j.jobCreatedDate)) === key)
-      .reduce((sum, j) => sum + toNumber(j.poValue), 0),
-  }));
+  const createdMonth = (j: JobDto) => monthKeyOf(new Date(j.jobCreatedDate));
+  const createdWeek = (j: JobDto) => weekKey(new Date(j.jobCreatedDate));
+  const invoicedMonth = (j: JobDto) => (j.invoice?.invoiceDate ? monthKeyOf(new Date(j.invoice.invoiceDate)) : null);
+  const invoicedWeek = (j: JobDto) => (j.invoice?.invoiceDate ? weekKey(new Date(j.invoice.invoiceDate)) : null);
+  const poValue = (j: JobDto) => toNumber(j.poValue);
+  const invoiceAmount = (j: JobDto) => toNumber(j.invoice?.invoiceAmount);
 
   const quotationStats = jobs
     .map((j) => j.status.stages.find((s) => s.name === "QUOTATION"))
     .filter((s) => s && s.status === "COMPLETED");
-  const quotationPerformance = {
-    withinSla: quotationStats.filter((s) => s!.sla.status !== "RED").length,
-    outsideSla: quotationStats.filter((s) => s!.sla.status === "RED").length,
-  };
 
-  const complianceMonthKeys = lastNMonthKeys(6, anchor);
-  const slaComplianceTrend = complianceMonthKeys.map((key) => {
-    const bucketJobs = jobs.filter((j) => monthKey(new Date(j.jobCreatedDate)) === key);
-    const percent =
-      bucketJobs.length === 0
-        ? null
-        : Math.round((bucketJobs.filter((j) => j.status.slaCompliant).length / bucketJobs.length) * 100);
-    return { label: monthLabel(key), value: percent ?? 0 };
+  const slaComplianceTrend = lastNMonthKeys(6, anchor).map((key) => {
+    const bucketJobs = jobs.filter((j) => createdMonth(j) === key);
+    const compliant = bucketJobs.filter((j) => j.status.slaCompliant).length;
+    return { label: monthLabel(key), value: bucketJobs.length === 0 ? 0 : Math.round((compliant / bucketJobs.length) * 100) };
   });
-
-  function rankedCount(getKey: (j: JobDto) => string | null | undefined, limit = 10): Bucket[] {
-    const counts = new Map<string, number>();
-    for (const job of delayedJobs) {
-      const key = getKey(job);
-      if (!key) continue;
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-    return [...counts.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, limit)
-      .map(([label, value]) => ({ label, value }));
-  }
-
-  const delayedByStage = rankedCount((j) => STAGE_LABELS[j.status.currentStage]);
-  const delayedByCreator = rankedCount((j) => j.createdBy?.name);
-  const delayedByTechnician = rankedCount((j) => j.repair?.technicianName);
-
-  const revenueByCustomer = new Map<string, number>();
-  for (const job of jobs) {
-    if (!job.invoice?.invoiceAmount) continue;
-    revenueByCustomer.set(job.customer, (revenueByCustomer.get(job.customer) ?? 0) + toNumber(job.invoice.invoiceAmount));
-  }
-  const topCustomersByRevenue: Bucket[] = [...revenueByCustomer.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10)
-    .map(([label, value]) => ({ label, value }));
-
-  const customerNames = [...new Set(jobs.map((j) => j.customer))];
-  const customerPerformance = customerNames
-    .map((customer) => {
-      const customerJobs = jobs.filter((j) => j.customer === customer);
-      const customerClosed = customerJobs.filter((j) => j.status.isClosed);
-      const avgTurnaroundDays =
-        customerClosed.length === 0
-          ? null
-          : Math.round(customerClosed.reduce((sum, j) => sum + j.status.totalJobAge, 0) / customerClosed.length);
-      const slaCompliancePercent = Math.round(
-        (customerJobs.filter((j) => j.status.slaCompliant).length / customerJobs.length) * 100
-      );
-      return { customer, jobCount: customerJobs.length, avgTurnaroundDays, slaCompliancePercent };
-    })
-    .sort((a, b) => b.jobCount - a.jobCount);
 
   return {
     kpis,
     charts: {
-      jobsCreatedByMonth,
-      jobsCreatedByWeek,
-      jobsByType,
-      jobsByStage,
+      jobsCreatedByMonth: trendSeries(jobs, monthKeys, monthLabel, createdMonth),
+      jobsCreatedByWeek: trendSeries(jobs, weekKeys, weekLabel, createdWeek),
+      jobsByType: countBy(jobs.map((j) => j.jobType), Object.keys(JOB_TYPE_LABELS), JOB_TYPE_LABELS),
+      jobsByStage: countBy(jobs.map((j) => j.status.currentStage), STAGE_ORDER, STAGE_LABELS),
       avgDaysPerStage,
       valueBreakdown,
-      invoiceValueByMonth,
-      jobValueByMonth,
-      invoiceValueByWeek,
-      jobValueByWeek,
-      jobsInvoicedByMonth,
-      jobsInvoicedByWeek,
-      quotationPerformance,
+      invoiceValueByMonth: trendSeries(jobs, monthKeys, monthLabel, invoicedMonth, invoiceAmount),
+      jobValueByMonth: trendSeries(jobs, monthKeys, monthLabel, createdMonth, poValue),
+      invoiceValueByWeek: trendSeries(jobs, weekKeys, weekLabel, invoicedWeek, invoiceAmount),
+      jobValueByWeek: trendSeries(jobs, weekKeys, weekLabel, createdWeek, poValue),
+      jobsInvoicedByMonth: trendSeries(jobs, monthKeys, monthLabel, invoicedMonth),
+      jobsInvoicedByWeek: trendSeries(jobs, weekKeys, weekLabel, invoicedWeek),
+      quotationPerformance: {
+        withinSla: quotationStats.filter((s) => s!.sla.status !== "RED").length,
+        outsideSla: quotationStats.filter((s) => s!.sla.status === "RED").length,
+      },
       slaComplianceTrend,
-      delayedByStage,
-      delayedByCreator,
-      delayedByTechnician,
-      topCustomersByRevenue,
-      customerPerformance,
     },
   };
 }
-
-export type DashboardSummary = ReturnType<typeof buildDashboardSummary>;

@@ -13,7 +13,7 @@ const CATEGORICAL: Record<ThemeMode, string[]> = {
 };
 
 /** Reserved for SLA/status state only — never reused as a categorical series color. */
-const STATUS = { good: STATUS_SUCCESS, warning: EPIROC_YELLOW, critical: STATUS_DANGER };
+export const STATUS_COLORS = { good: STATUS_SUCCESS, warning: EPIROC_YELLOW, critical: STATUS_DANGER };
 
 /** Axis, grid and label colors per mode. */
 const CHROME: Record<ThemeMode, { axis: string; grid: string; text: string; tooltipBg: string; tooltipBorder: string }> = {
@@ -23,10 +23,6 @@ const CHROME: Record<ThemeMode, { axis: string; grid: string; text: string; tool
 
 export function getCategoricalPalette(mode: ThemeMode): string[] {
   return CATEGORICAL[mode];
-}
-
-export function getStatusPalette(_mode?: ThemeMode) {
-  return STATUS;
 }
 
 export function getChartChrome(mode: ThemeMode) {

@@ -2,8 +2,10 @@ import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { Job } from "../../types";
 import { useUpdateJob } from "../../api/jobs";
+import { apiErrorMessage } from "../../api/client";
 import { toDateInputValue } from "../../utils/date";
-import { Alert, Button, Dialog, TextField } from "../../components/ui";
+import { TextField } from "../../components/ui";
+import { FormDialog } from "../../components/FormDialog";
 
 export type JobEditableField = "woNumber" | "poNumber" | "woNumberSetAt" | "jobCreatedDate";
 
@@ -54,46 +56,37 @@ export function JobFieldDialog({
     try {
       await updateJob.mutateAsync({ [field]: values.value.trim() });
       onClose();
-    } catch (err: any) {
-      setError(err?.response?.data?.error ?? `Failed to save ${label}`);
+    } catch (err) {
+      setError(apiErrorMessage(err, `Failed to save ${label}`));
     }
   }
 
   return (
-    <Dialog
+    <FormDialog
       size="xs"
-      onClose={onClose}
+      columns={1}
       title={`${label} — ${job.referenceNumber}`}
-      actions={
-        <>
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button variant="primary" onClick={handleSubmit(onSubmit)} loading={updateJob.isPending}>
-            {updateJob.isPending ? "Saving…" : "Save"}
-          </Button>
-        </>
-      }
+      error={error}
+      submitting={updateJob.isPending}
+      onSave={handleSubmit(onSubmit)}
+      onClose={onClose}
     >
-      <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-3">
-        {error && <Alert severity="error">{error}</Alert>}
-        <Controller
-          name="value"
-          control={control}
-          rules={{ required: `${label} is required` }}
-          render={({ field: rhfField, fieldState }) => (
-            <TextField
-              {...rhfField}
-              autoFocus
-              label={label}
-              required
-              {...(isDate ? { type: "date", ...dateConstraints(field, job) } : {})}
-              error={!!fieldState.error}
-              helperText={fieldState.error?.message}
-            />
-          )}
-        />
-      </form>
-    </Dialog>
+      <Controller
+        name="value"
+        control={control}
+        rules={{ required: `${label} is required` }}
+        render={({ field: rhfField, fieldState }) => (
+          <TextField
+            {...rhfField}
+            autoFocus
+            label={label}
+            required
+            {...(isDate ? { type: "date", ...dateConstraints(field, job) } : {})}
+            error={!!fieldState.error}
+            helperText={fieldState.error?.message}
+          />
+        )}
+      />
+    </FormDialog>
   );
 }

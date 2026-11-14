@@ -3,7 +3,8 @@ import { Job } from "../../../types";
 import { addBusinessDays, toDateInputValue } from "../../../utils/date";
 import { useStageSubmit } from "../useStageSubmit";
 import { Checkbox, TextField } from "../../../components/ui";
-import { DelayReasonField, StageFormDialog } from "./StageFormDialog";
+import { FormDialog } from "../../../components/FormDialog";
+import { DelayReasonField, toStagePayload } from "./stageFormFields";
 
 interface FormValues {
   purchaseOrderNumber: string;
@@ -62,19 +63,11 @@ export function RepairDialog({ job, onClose }: { job: Job; onClose: () => void }
   });
 
   function onSubmit(values: FormValues) {
-    const payload: Record<string, unknown> = { ...values };
-    for (const key of ["labourHours", "partsCost", "totalRepairCost"]) {
-      if (payload[key] === "") delete payload[key];
-      else payload[key] = Number(payload[key]);
-    }
-    for (const key of Object.keys(payload)) {
-      if (payload[key] === "") delete payload[key];
-    }
-    submit(payload);
+    submit(toStagePayload(values, { numbers: ["labourHours", "partsCost", "totalRepairCost"] }));
   }
 
   return (
-    <StageFormDialog
+    <FormDialog
       title={`Repair Stage — ${job.referenceNumber}`}
       error={error}
       submitting={submitting}
@@ -195,6 +188,6 @@ export function RepairDialog({ job, onClose }: { job: Job; onClose: () => void }
         requiredText="Required: this repair has exceeded the 20-day SLA target"
         optionalText="Only required if the repair SLA has been exceeded"
       />
-    </StageFormDialog>
+    </FormDialog>
   );
 }

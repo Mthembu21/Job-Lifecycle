@@ -26,6 +26,8 @@ export interface StageComputed {
   name: Exclude<StageName, "CLOSED">;
   status: StageStatus;
   sla: SlaResult;
+  /** When the stage was completed (ISO date), null while it isn't. */
+  completedOn: string | null;
 }
 
 export interface DerivedJobStatus {
@@ -36,8 +38,10 @@ export interface DerivedJobStatus {
   slaCompliant: boolean;
   stages: StageComputed[];
   isClosed: boolean;
-  /** Closed with no invoice (internal job). */
+  /** Closed with no invoice (internal or warranty job). */
   closedWithoutInvoice: boolean;
+  /** When the job closed (ISO date), null while open. */
+  closedOn: string | null;
 }
 
 export interface UserSummary {

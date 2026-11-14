@@ -3,7 +3,8 @@ import { Job } from "../../../types";
 import { toDateInputValue } from "../../../utils/date";
 import { useStageSubmit } from "../useStageSubmit";
 import { TextField } from "../../../components/ui";
-import { DelayReasonField, StageFormDialog } from "./StageFormDialog";
+import { FormDialog } from "../../../components/FormDialog";
+import { DelayReasonField, toStagePayload } from "./stageFormFields";
 
 interface FormValues {
   dispatchRequestDate: string;
@@ -29,17 +30,13 @@ export function DispatchDialog({ job, onClose }: { job: Job; onClose: () => void
   });
 
   function onSubmit(values: FormValues) {
-    const payload: Record<string, unknown> = { ...values };
-    for (const key of Object.keys(payload)) {
-      if (payload[key] === "") delete payload[key];
-    }
-    submit(payload);
+    submit(toStagePayload(values));
   }
 
   const repairNotDone = !job.repair?.repairCompletionDate;
 
   return (
-    <StageFormDialog
+    <FormDialog
       title={`Dispatch Stage — ${job.referenceNumber}`}
       error={error}
       warning={repairNotDone ? "Repair has not been marked complete yet — dispatch cannot be saved until it is." : null}
@@ -76,6 +73,6 @@ export function DispatchDialog({ job, onClose }: { job: Job; onClose: () => void
         requiredText="Required: dispatch has exceeded the 2-day SLA target"
         optionalText="Only required if the dispatch SLA has been exceeded"
       />
-    </StageFormDialog>
+    </FormDialog>
   );
 }

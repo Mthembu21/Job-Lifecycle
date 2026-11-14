@@ -1,5 +1,6 @@
 import { Dispatch, Invoice, Job, Quotation, Repair } from "@prisma/client";
 import { daysBetween, dispatchSla, invoiceSla, poSla, quotationSla, repairSla, SlaResult } from "./sla";
+import { isNonInvoicedJobType } from "./jobTypes";
 
 export type StageName =
   | "QUOTATION"
@@ -15,6 +16,8 @@ export interface StageComputed {
   name: Exclude<StageName, "CLOSED">;
   status: StageStatus;
   sla: SlaResult;
+  /** When the stage was completed (null while it isn't). */
+  completedOn: Date | null;
 }
 
 export interface JobWithRelations extends Job {
@@ -32,14 +35,21 @@ export interface DerivedJobStatus {
   slaCompliant: boolean;
   stages: StageComputed[];
   isClosed: boolean;
-  /** Closed with no invoice (internal job). */
+  /** When the job closed (null while open). */
+  closedOn: Date | null;
+  /** Closed with no invoice — an internal or warranty job. */
   closedWithoutInvoice: boolean;
 }
 
-function computeStageStatus(started: boolean, completed: boolean, sla: SlaResult): StageStatus {
+function computeStageStatus(started: boolean, completedOn: Date | null, sla: SlaResult): StageStatus {
   if (!started) return "NOT_STARTED";
-  if (completed) return "COMPLETED";
+  if (completedOn) return "COMPLETED";
   return sla.status === "RED" ? "DELAYED" : "IN_PROGRESS";
+}
+
+function stage(name: StageComputed["name"], started: boolean, completedOn: Date | null | undefined, sla: SlaResult): StageComputed {
+  const done = completedOn ?? null;
+  return { name, status: computeStageStatus(started, done, sla), sla, completedOn: done };
 }
 
 /**
@@ -50,75 +60,41 @@ function computeStageStatus(started: boolean, completed: boolean, sla: SlaResult
 export function deriveJobStatus(job: JobWithRelations, asOf: Date = new Date()): DerivedJobStatus {
   const { quotation, repair, dispatch, invoice } = job;
 
-  const quotationSlaResult = quotationSla(job.jobCreatedDate, quotation?.epirocQuotationDate, asOf);
-  const quotationCompleted = Boolean(quotation?.epirocQuotationDate);
-  const quotationStage: StageComputed = {
-    name: "QUOTATION",
-    status: computeStageStatus(true, quotationCompleted, quotationSlaResult),
-    sla: quotationSlaResult,
-  };
+  const quoted = quotation?.epirocQuotationDate;
+  const goAhead = repair?.purchaseOrderDate;
+  const repaired = repair?.repairCompletionDate;
+  const dispatched = dispatch?.dispatchDate;
+  // Internal and warranty jobs are never invoiced: their closing date completes the last stage.
+  const closedWithoutInvoice = isNonInvoicedJobType(job.jobType) && !!invoice?.closingDate && !invoice?.invoiceDate;
+  const invoicingDone = invoice?.invoiceDate ?? (closedWithoutInvoice ? invoice?.closingDate : null);
 
-  const poSlaResult = poSla(quotation?.epirocQuotationDate, repair?.purchaseOrderDate, asOf);
-  const poCompleted = Boolean(repair?.purchaseOrderDate);
-  const awaitingPoStage: StageComputed = {
-    name: "AWAITING_PO",
-    status: computeStageStatus(quotationCompleted, poCompleted, poSlaResult),
-    sla: poSlaResult,
-  };
+  const stages = [
+    stage("QUOTATION", true, quoted, quotationSla(job.jobCreatedDate, quoted, asOf)),
+    stage("AWAITING_PO", !!quoted, goAhead, poSla(quoted, goAhead, asOf)),
+    stage("REPAIR", !!goAhead, repaired, repairSla(goAhead, repaired, asOf)),
+    stage("DISPATCH", !!repaired, dispatched, dispatchSla(repaired, dispatched, asOf)),
+    stage("INVOICING", !!dispatched, invoicingDone, invoiceSla(dispatched, invoicingDone, asOf)),
+  ];
 
-  const repairSlaResult = repairSla(repair?.purchaseOrderDate, repair?.repairCompletionDate, asOf);
-  const repairCompleted = Boolean(repair?.repairCompletionDate);
-  const repairStage: StageComputed = {
-    name: "REPAIR",
-    status: computeStageStatus(poCompleted, repairCompleted, repairSlaResult),
-    sla: repairSlaResult,
-  };
-
-  const dispatchSlaResult = dispatchSla(repair?.repairCompletionDate, dispatch?.dispatchDate, asOf);
-  const dispatchCompleted = Boolean(dispatch?.dispatchDate);
-  const dispatchStage: StageComputed = {
-    name: "DISPATCH",
-    status: computeStageStatus(repairCompleted, dispatchCompleted, dispatchSlaResult),
-    sla: dispatchSlaResult,
-  };
-
-  // Internal jobs can be closed with no invoice: the closing date then completes the invoicing stage.
-  const closedWithoutInvoice = Boolean(invoice?.closedWithoutInvoice && invoice?.closingDate && !invoice?.invoiceDate);
-  const invoiceDoneDate = invoice?.invoiceDate ?? (closedWithoutInvoice ? invoice?.closingDate : null);
-  const invoiceSlaResult = invoiceSla(dispatch?.dispatchDate, invoiceDoneDate, asOf);
-  const invoiceCompleted = Boolean(invoiceDoneDate);
-  const invoicingStage: StageComputed = {
-    name: "INVOICING",
-    status: computeStageStatus(dispatchCompleted, invoiceCompleted, invoiceSlaResult),
-    sla: invoiceSlaResult,
-  };
-
-  const stages = [quotationStage, awaitingPoStage, repairStage, dispatchStage, invoicingStage];
-
-  const isClosed = invoiceCompleted;
+  const isClosed = Boolean(invoicingDone);
+  const closedOn = isClosed ? invoice?.closingDate ?? invoice?.invoiceDate ?? null : null;
   const firstIncomplete = stages.find((s) => s.status !== "COMPLETED");
 
   const currentStage: StageName = isClosed ? "CLOSED" : firstIncomplete?.name ?? "CLOSED";
-  const currentStatus: StageStatus | "CLOSED" = isClosed
-    ? "CLOSED"
-    : firstIncomplete?.status ?? "CLOSED";
-
-  const currentStageComputed = stages.find((s) => s.name === currentStage);
-  const daysInCurrentStage = isClosed ? null : currentStageComputed?.sla.days ?? null;
+  const currentStatus: StageStatus | "CLOSED" = isClosed ? "CLOSED" : firstIncomplete?.status ?? "CLOSED";
+  const daysInCurrentStage = isClosed ? null : stages.find((s) => s.name === currentStage)?.sla.days ?? null;
 
   const endDate = invoice?.closingDate ?? invoice?.invoiceDate ?? asOf;
-  const totalJobAge = daysBetween(job.jobCreatedDate, endDate);
-
-  const slaCompliant = stages.every((s) => s.sla.status !== "RED");
 
   return {
     currentStage,
     currentStatus,
     daysInCurrentStage,
-    totalJobAge,
-    slaCompliant,
+    totalJobAge: daysBetween(job.jobCreatedDate, endDate),
+    slaCompliant: stages.every((s) => s.sla.status !== "RED"),
     stages,
     isClosed,
+    closedOn,
     closedWithoutInvoice,
   };
 }

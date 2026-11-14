@@ -11,9 +11,13 @@ import { formatCurrency } from "../../utils/currency";
 import { defaultForecastAmount } from "../../utils/forecast";
 import { isNonInvoicedJobType } from "../../utils/jobTypes";
 import { daysBetween, formatDate } from "../../utils/date";
+import { plural } from "../../utils/text";
+import { currentStageSla } from "../../utils/jobStatus";
 import { Alert, Badge, BadgeTone, Card, Checkbox, PageHeader, PageSpinner, Segmented, TextField, cn } from "../../components/ui";
-import { currentMonthKey, monthLabel } from "../dashboard/MonthPicker";
+import { currentMonthKey, monthLabel, monthRange } from "../../utils/month";
 import { SlaChip } from "../common/SlaChip";
+import { apiErrorMessage } from "../../api/client";
+import { EmptyRow, STICKY_THEAD, TH, TD } from "../../components/ui/Table";
 
 type View = "all" | "ticked" | "unforecast";
 
@@ -21,25 +25,18 @@ type View = "all" | "ticked" | "unforecast";
 const STAGE_ORDER: StageName[] = ["INVOICING", "DISPATCH", "REPAIR", "AWAITING_PO", "QUOTATION"];
 const STAGE_TONE: Partial<Record<StageName, BadgeTone>> = { INVOICING: "success", DISPATCH: "success", REPAIR: "brand" };
 
-function monthOptions(): string[] {
-  const now = new Date();
-  return Array.from({ length: 12 }, (_, i) => currentMonthKey(new Date(now.getFullYear(), now.getMonth() + i, 1)));
-}
-
 function formatLockDate(iso: string): string {
   // locksAt is the first instant of the month — show the last day of the previous month.
   const d = new Date(new Date(iso).getTime() - 1);
   return d.toLocaleDateString("en-ZA", { day: "numeric", month: "long" });
 }
 
-const TH = "px-3 py-2.5 text-left text-xs font-semibold tracking-wide whitespace-nowrap text-gray-600 uppercase dark:text-gray-300";
-const TD = "px-3 py-2.5";
 
 export function ForecastPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const options = monthOptions();
+  const options = monthRange(0, 11); // this month + the next 11
   const month = params.get("month") && options.includes(params.get("month")!) ? params.get("month")! : options[1];
   const { data: jobs, isLoading } = useJobs({});
   const { data: status } = useForecastMonthStatus(month);
@@ -62,24 +59,34 @@ export function ForecastPage() {
     [jobs]
   );
 
+  const isTicked = (j: Job) => j.forecastMonth === month;
+
+  // Everything derived from the list, recomputed only when the list, month or filters change.
+  const { ticked, total, unforecastCount, visible, eligible, visibleTicked } = useMemo(() => {
+    const onMonth = (j: Job) => j.forecastMonth === month;
+    const q = search.trim().toLowerCase();
+    const ticked = open.filter(onMonth);
+    const visible = open.filter(
+      (j) =>
+        (view === "all" || (view === "ticked" ? onMonth(j) : !j.forecastMonth)) &&
+        (!stage || j.status.currentStage === stage) &&
+        (!q || [j.referenceNumber, j.customer, j.description].some((v) => v?.toLowerCase().includes(q)))
+    );
+    return {
+      ticked,
+      total: ticked.reduce((s, j) => s + (j.forecastAmount ?? 0), 0),
+      unforecastCount: open.filter((j) => !j.forecastMonth).length,
+      visible,
+      // "Tick all" only covers jobs that aren't forecast for a different month — moving those is
+      // done one at a time, deliberately.
+      eligible: visible.filter((j) => onMonth(j) || !j.forecastMonth),
+      visibleTicked: visible.filter(onMonth),
+    };
+  }, [open, month, view, stage, search]);
+  const allVisibleTicked = eligible.length > 0 && visibleTicked.length === eligible.length;
+
   if (!canEditForecast(user?.role)) return <Navigate to="/" replace />;
   if (isLoading || !jobs) return <PageSpinner />;
-
-  const isTicked = (j: Job) => j.forecastMonth === month;
-  const ticked = open.filter(isTicked);
-  const total = ticked.reduce((s, j) => s + (j.forecastAmount ?? 0), 0);
-  const q = search.trim().toLowerCase();
-  const visible = open.filter(
-    (j) =>
-      (view === "all" || (view === "ticked" ? isTicked(j) : !j.forecastMonth)) &&
-      (!stage || j.status.currentStage === stage) &&
-      (!q || [j.referenceNumber, j.customer, j.description].some((v) => v?.toLowerCase().includes(q)))
-  );
-  // "Tick all" only covers jobs that aren't forecast for a different month — moving those is done
-  // one at a time, deliberately.
-  const eligible = visible.filter((j) => isTicked(j) || !j.forecastMonth);
-  const visibleTicked = visible.filter(isTicked);
-  const allVisibleTicked = eligible.length > 0 && visibleTicked.length === eligible.length;
 
   async function run(ids: string[], input: Parameters<typeof assign.mutateAsync>[0]) {
     setPending((p) => new Set([...p, ...ids]));
@@ -128,7 +135,7 @@ export function ForecastPage() {
           <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{label} forecast</p>
           <p className="text-3xl font-bold tracking-tight text-gray-900 tabular-nums dark:text-gray-50">{formatCurrency(total)}</p>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            {ticked.length} job{ticked.length === 1 ? "" : "s"} ticked
+            {plural(ticked.length, "job")} ticked
           </p>
         </div>
         {status && (
@@ -157,7 +164,7 @@ export function ForecastPage() {
 
       {assign.isError && (
         <Alert severity="error" className="mb-4">
-          {(assign.error as any)?.response?.data?.error ?? "Couldn't save the forecast — please try again."}
+          {apiErrorMessage(assign.error, "Couldn't save the forecast — please try again.")}
         </Alert>
       )}
 
@@ -190,7 +197,7 @@ export function ForecastPage() {
               options={[
                 { value: "all", label: `All open (${open.length})` },
                 { value: "ticked", label: `Ticked (${ticked.length})` },
-                { value: "unforecast", label: `Not forecast (${open.filter((j) => !j.forecastMonth).length})` },
+                { value: "unforecast", label: `Not forecast (${unforecastCount})` },
               ]}
             />
           </div>
@@ -198,7 +205,7 @@ export function ForecastPage() {
 
         <div className="max-h-[max(20rem,calc(100dvh-26rem))] overflow-auto">
           <table className="w-full text-sm">
-            <thead className="sticky top-0 z-10 bg-gray-50 shadow-[0_1px_0_var(--color-gray-200)] dark:bg-gray-800 dark:shadow-[0_1px_0_var(--color-gray-700)]">
+            <thead className={STICKY_THEAD}>
               <tr>
                 <th className="w-10 px-3 py-2.5">
                   <Checkbox
@@ -219,16 +226,14 @@ export function ForecastPage() {
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
               {visible.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-3 py-12 text-center text-gray-500 dark:text-gray-400">
+                <EmptyRow cols={6}>
                     {open.length === 0 ? "There are no open jobs to forecast." : "No jobs match."}
-                  </td>
-                </tr>
+                </EmptyRow>
               )}
               {visible.map((job) => {
                 const on = isTicked(job);
                 const busy = pending.has(job.id);
-                const sla = job.status.stages.find((s) => s.name === job.status.currentStage)?.sla;
+                const sla = currentStageSla(job);
                 return (
                   <tr key={job.id} className={cn("transition-colors", on ? "bg-yellow-soft/60 dark:bg-yellow/5" : "hover:bg-gray-50 dark:hover:bg-gray-800/50")}>
                     <td className={TD}>
@@ -323,18 +328,20 @@ function AmountInput({ job, busy, onSave }: { job: Job; busy: boolean; onSave: (
   };
 
   return (
-    <input
+    <TextField
+      hideLabel
+      label={`Forecast amount for ${job.referenceNumber}`}
+      size="sm"
       type="number"
       min={0}
       step="0.01"
       inputMode="decimal"
-      aria-label={`Forecast amount for ${job.referenceNumber}`}
       value={value}
       disabled={busy}
       onChange={(e) => setValue(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
-      className="h-9 w-40 rounded-lg border border-gray-300 bg-white px-2.5 text-right text-sm tabular-nums outline-none focus:border-yellow focus:ring-4 focus:ring-yellow/30 disabled:opacity-60 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+      className="ml-auto w-40 [&_input]:text-right [&_input]:tabular-nums"
     />
   );
 }

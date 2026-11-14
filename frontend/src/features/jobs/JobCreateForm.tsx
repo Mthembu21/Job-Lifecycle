@@ -5,6 +5,7 @@ import { useCreateJob, CreateJobInput } from "../../api/jobs";
 import { JOB_TYPE_LABELS, PRIORITY_LABELS } from "../../constants";
 import { addBusinessDays } from "../../utils/date";
 import { Alert, Button, Card, PageHeader, TextField } from "../../components/ui";
+import { apiErrorMessage } from "../../api/client";
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
@@ -77,8 +78,8 @@ export function JobCreateForm() {
         dateReceived: values.dateReceived?.trim() || undefined,
       });
       navigate(`/jobs/${job.id}`);
-    } catch (err: any) {
-      setServerError(err?.response?.data?.error ?? "Failed to create job");
+    } catch (err) {
+      setServerError(apiErrorMessage(err, "Failed to create job"));
     }
   }
 

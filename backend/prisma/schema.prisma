@@ -145,20 +145,18 @@ model Dispatch {
 }
 
 model Invoice {
-  id                   String    @id @default(auto()) @map("_id") @db.ObjectId
-  jobId                String    @unique @db.ObjectId
-  job                  Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  invoiceNumber        String?
-  invoiceDate          DateTime?
-  invoiceAmount        Float?
-  plannedClosingDate   DateTime?
-  closingDate          DateTime?
-  /// Internal job closed with no invoice raised (e.g. an internal customer). Closed on closingDate.
-  closedWithoutInvoice Boolean?
-  comments             String?
-  delayReason          String?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  id                 String    @id @default(auto()) @map("_id") @db.ObjectId
+  jobId              String    @unique @db.ObjectId
+  job                Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  invoiceNumber      String?
+  invoiceDate        DateTime?
+  invoiceAmount      Float?
+  plannedClosingDate DateTime?
+  closingDate        DateTime?
+  comments           String?
+  delayReason        String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 }
 
 model JobAuditLog {
@@ -187,7 +185,6 @@ model ForecastSnapshot {
   createdAt       DateTime @default(now())
 
   @@unique([month, jobId])
-  @@index([month])
 }
 
 /// Marks a month's forecast as frozen.
