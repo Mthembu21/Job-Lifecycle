@@ -11,8 +11,6 @@ interface StatTileProps {
   tone?: Tone;
   /** Small line under the value, e.g. a count behind an amount. */
   sub?: ReactNode;
-  /** Takes two grid columns on large screens — for amounts that would otherwise be cut off. */
-  wide?: boolean;
   /** Extra content under the value (e.g. a progress bar). */
   children?: ReactNode;
 }
@@ -31,9 +29,9 @@ const BORDER_TONE: Record<Tone, string | false> = {
   good: "border-l-4 border-l-success",
 };
 
-export function StatTile({ label, value, icon: Icon, tone = "default", sub, wide, children }: StatTileProps) {
+export function StatTile({ label, value, icon: Icon, tone = "default", sub, children }: StatTileProps) {
   return (
-    <Card className={cn("flex h-full items-start justify-between gap-3 p-4", BORDER_TONE[tone], wide && "xl:col-span-2")}>
+    <Card className={cn("flex h-full items-start justify-between gap-3 p-4", BORDER_TONE[tone])}>
       <div className="min-w-0 flex-1">
         <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{label}</p>
         <p
