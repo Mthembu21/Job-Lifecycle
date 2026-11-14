@@ -1,13 +1,14 @@
 import { Router } from "express";
 import { z } from "zod";
-import { Prisma } from "@prisma/client";
+import { JobType, Prisma } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { asyncHandler, HttpError } from "../../middleware/errorHandler";
 import { authenticate } from "../../middleware/auth";
-import { requireRole } from "../../middleware/rbac";
+import { hasRole, requireRole } from "../../middleware/rbac";
 import { writeAuditLog, diffSummary } from "../../lib/audit";
 import { jobListInclude, toJobDto } from "./jobs.dto";
-import { ensureForecastsFrozen, MONTH_KEY_RE } from "../../lib/forecast";
+import { ensureForecastsFrozen } from "../../lib/forecast";
+import { MONTH_KEY_RE } from "../../lib/months";
 import { isNonInvoicedJobType } from "../../lib/jobTypes";
 
 const router = Router();
@@ -20,7 +21,7 @@ const createJobSchema = z.object({
   partNumber: z.string().optional(),
   woNumber: z.string().optional(),
   poNumber: z.string().optional(),
-  jobType: z.enum(["WARRANTY", "CUSTOMER_REPAIR", "INTERNAL", "SERVICE", "REBUILD", "INSURANCE", "OTHER"]),
+  jobType: z.nativeEnum(JobType),
   poValue: z.number().nonnegative(),
   priority: z.enum(["HIGH", "MEDIUM", "LOW"]),
   jobCreatedDate: z.coerce.date(),
@@ -34,7 +35,7 @@ const updateJobSchema = z
     woNumberSetAt: z.coerce.date().optional(),
     jobCreatedDate: z.coerce.date().optional(),
     // Service type — decides whether the job is invoiced or closed without invoice (internal / warranty).
-    jobType: z.enum(["WARRANTY", "CUSTOMER_REPAIR", "INTERNAL", "SERVICE", "REBUILD", "INSURANCE", "OTHER"]).optional(),
+    jobType: z.nativeEnum(JobType).optional(),
     // Invoice forecast (planner / admin only). null clears it.
     forecastMonth: z.string().regex(MONTH_KEY_RE, "Forecast month must be YYYY-MM").nullable().optional(),
     forecastAmount: z.number().nonnegative().nullable().optional(),
@@ -145,32 +146,27 @@ router.patch(
   authenticate,
   requireRole("STOREMAN", "PLANNER"),
   asyncHandler(async (req, res) => {
-    const job = await prisma.job.findUnique({ where: { id: req.params.id } });
+    const job = await prisma.job.findUnique({ where: { id: req.params.id }, include: { invoice: true } });
     if (!job) throw new HttpError(404, "Job not found");
 
     const data = updateJobSchema.parse(req.body);
 
-    // Changing the service type between invoiced and not-invoiced (internal / warranty) changes how
-    // the job closes, so keep the invoice record and forecast consistent with it.
+    // The service type decides whether the job is invoiced or closed without invoice (internal /
+    // warranty — see lib/statusEngine.ts), so an invoiced job can't switch to a non-invoiced type.
     const typeChanged = data.jobType !== undefined && data.jobType !== job.jobType;
     const becomesNonInvoiced = typeChanged && isNonInvoicedJobType(data.jobType!);
-    if (typeChanged) {
-      const invoice = await prisma.invoice.findUnique({ where: { jobId: job.id } });
-      if (invoice?.invoiceDate && becomesNonInvoiced) {
-        throw new HttpError(
-          400,
-          "This job has already been invoiced. Remove the invoice first if it should be an internal or warranty job."
-        );
-      }
-      if (invoice && !invoice.invoiceDate) {
-        // A closing date with no invoice closes the job only for internal / warranty types.
-        await prisma.invoice.update({ where: { jobId: job.id }, data: { closedWithoutInvoice: becomesNonInvoiced } });
-      }
+    if (becomesNonInvoiced && job.invoice?.invoiceDate) {
+      throw new HttpError(
+        400,
+        "This job has already been invoiced. Remove the invoice first if it should be an internal or warranty job."
+      );
     }
 
-    const touchesForecast = data.forecastMonth !== undefined || data.forecastAmount !== undefined || becomesNonInvoiced;
-    if (data.forecastMonth !== undefined || data.forecastAmount !== undefined) {
-      if (req.user!.role !== "PLANNER" && req.user!.role !== "ADMIN") {
+    const editsForecast = data.forecastMonth !== undefined || data.forecastAmount !== undefined;
+    // Switching to a non-invoiced type also removes the job's forecast.
+    const touchesForecast = editsForecast || becomesNonInvoiced;
+    if (editsForecast) {
+      if (!hasRole(req.user, "PLANNER")) {
         throw new HttpError(403, "Only planners can set invoice forecasts");
       }
       if (data.forecastMonth && isNonInvoicedJobType(data.jobType ?? job.jobType)) {

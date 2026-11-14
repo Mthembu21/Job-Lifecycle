@@ -2,8 +2,16 @@ import fs from "fs";
 import path from "path";
 import ExcelJS from "exceljs";
 import { prisma } from "../../lib/prisma";
-import { deriveJobStatus, StageName } from "../../lib/statusEngine";
-import { COL, GROUP_HEADERS, HEADERS, SCHEDULER_SHEET_NAME, jobTypeToServiceType } from "./scheduler.mapping";
+import { deriveJobStatus } from "../../lib/statusEngine";
+import { SlaStage } from "../../lib/labels";
+import {
+  COL,
+  COMPUTED_DAY_COLUMNS,
+  GROUP_HEADERS,
+  HEADERS,
+  SCHEDULER_SHEET_NAME,
+  jobTypeToServiceType,
+} from "./scheduler.mapping";
 import { EXTRA_COLUMNS, EXTRA_GROUPS, ExportStatus, ExtraKind } from "./scheduler.extras";
 
 /*
@@ -85,26 +93,20 @@ const DAY_FORMULAS: Array<[number, number, number]> = [
   [COL.TOTAL_DAYS_COMP, COL.ACTUAL_JOB_CLOSING, COL.DATE_RECEIVED], // AN = AJ − L
   [COL.TURN_AROUND, COL.ACTUAL_DISPATCH_DATE, COL.GO_AHEAD_TO_REPAIR], // AP = AH − S
 ];
-const DAY_COLUMNS = new Set<number>([...DAY_FORMULAS.map(([c]) => c), COL.TOTAL_DAYS_WIP]);
+const DAY_FORMULA_BY_COL = new Map(DAY_FORMULAS.map(([col, later, earlier]) => [col, { later, earlier }]));
+// The formula columns above plus TOTAL (Days) WIP, which runs to today for open jobs.
+const DAY_COLUMNS = COMPUTED_DAY_COLUMNS;
 
 /** Free-text tracker columns: left-aligned. Everything else is centered. */
 const TEXT_COLUMNS = new Set<number>([COL.DESCRIPTION, COL.CUSTOMER, COL.COMMENT, COL.SUPPLIER_NAME, COL.REMARKS]);
 
 /** The app's stage, in the tracker's STATUS vocabulary (ASSESMENT / ASSEMBLY / DISPATCH / INVOICED / CLOSED). */
-const TRACKER_STATUS: Record<Exclude<StageName, "CLOSED">, string> = {
+const TRACKER_STATUS: Record<SlaStage, string> = {
   QUOTATION: "ASSESMENT",
   AWAITING_PO: "AWAITING PO",
   REPAIR: "ASSEMBLY",
   DISPATCH: "DISPATCH",
   INVOICING: "AWAITING INVOICE",
-};
-
-const STAGE_STATUS_TEXT: Record<string, string> = {
-  NOT_STARTED: "NOT STARTED",
-  IN_PROGRESS: "IN PROGRESS",
-  COMPLETED: "COMPLETED",
-  DELAYED: "DELAYED",
-  CLOSED: "CLOSED",
 };
 
 const COLUMN_WIDTHS: Record<number, number> = {
@@ -173,7 +175,6 @@ type CellValue = string | number | Date | null;
 interface BuiltRow {
   values: CellValue[];
   closed: boolean;
-  delayed: boolean;
 }
 
 /** One sheet row (0-based columns) for a job: the tracker's 42 columns then the app-only ones. */
@@ -187,7 +188,6 @@ function buildRow(job: JobForExport, now: Date): BuiltRow {
     return value === null || value === undefined || value === "" ? null : value;
   });
 
-  const d = excelDate;
   const s = (v: string | null | undefined) => (v === undefined || v === "" ? null : v);
 
   row[COL.REFERENCE] = job.referenceNumber;
@@ -201,26 +201,26 @@ function buildRow(job: JobForExport, now: Date): BuiltRow {
   row[COL.CUSTOMER_ACC] = s(job.customerAccount);
   row[COL.SERVICE_TYPE] = jobTypeToServiceType(job.jobType);
   row[COL.MCO_NR] = s(job.quotation?.mcoNumber);
-  row[COL.DATE_RECEIVED] = d(job.dateReceived);
-  row[COL.JOB_OPENING] = d(job.jobCreatedDate);
-  row[COL.PLANNED_DISASSEMBLY] = d(job.quotation?.plannedDisassemblyDate);
-  row[COL.ACTUAL_DISASSEMBLY] = d(job.quotation?.evaluationDate);
-  row[COL.DATE_QUOTED] = d(job.quotation?.epirocQuotationDate);
-  row[COL.GO_AHEAD_TO_REPAIR] = d(job.repair?.purchaseOrderDate);
-  row[COL.PLANNED_ASSEMBLY] = d(job.repair?.plannedAssemblyDate);
-  row[COL.ACTUAL_ASSEMBLY] = d(job.repair?.actualAssemblyDate);
-  row[COL.START] = d(job.repair?.repairStartDate);
-  row[COL.END] = d(job.repair?.repairCompletionDate);
+  row[COL.DATE_RECEIVED] = excelDate(job.dateReceived);
+  row[COL.JOB_OPENING] = excelDate(job.jobCreatedDate);
+  row[COL.PLANNED_DISASSEMBLY] = excelDate(job.quotation?.plannedDisassemblyDate);
+  row[COL.ACTUAL_DISASSEMBLY] = excelDate(job.quotation?.evaluationDate);
+  row[COL.DATE_QUOTED] = excelDate(job.quotation?.epirocQuotationDate);
+  row[COL.GO_AHEAD_TO_REPAIR] = excelDate(job.repair?.purchaseOrderDate);
+  row[COL.PLANNED_ASSEMBLY] = excelDate(job.repair?.plannedAssemblyDate);
+  row[COL.ACTUAL_ASSEMBLY] = excelDate(job.repair?.actualAssemblyDate);
+  row[COL.START] = excelDate(job.repair?.repairStartDate);
+  row[COL.END] = excelDate(job.repair?.repairCompletionDate);
   row[COL.OUTWORK] = s(job.repair?.outworkRequired);
   row[COL.SUPPLIER_NAME] = s(job.repair?.supplierName);
-  row[COL.DATE_SENT] = d(job.repair?.outworkDateSent);
-  row[COL.DATE_RECEIVED_FROM_SUPPLIER] = d(job.repair?.outworkDateReceived);
+  row[COL.DATE_SENT] = excelDate(job.repair?.outworkDateSent);
+  row[COL.DATE_RECEIVED_FROM_SUPPLIER] = excelDate(job.repair?.outworkDateReceived);
   row[COL.WAITING_FOR_GO_AHEAD] =
     job.repair?.waitingForGoAhead === true ? "YES" : job.repair?.waitingForGoAhead === false ? "NO" : null;
-  row[COL.DISPATCH_REQUEST_DATE] = d(job.dispatch?.dispatchRequestDate);
-  row[COL.ACTUAL_DISPATCH_DATE] = d(job.dispatch?.dispatchDate);
-  row[COL.PLANNED_JOB_CLOSING] = d(job.invoice?.plannedClosingDate);
-  row[COL.ACTUAL_JOB_CLOSING] = d(job.invoice?.closingDate);
+  row[COL.DISPATCH_REQUEST_DATE] = excelDate(job.dispatch?.dispatchRequestDate);
+  row[COL.ACTUAL_DISPATCH_DATE] = excelDate(job.dispatch?.dispatchDate);
+  row[COL.PLANNED_JOB_CLOSING] = excelDate(job.invoice?.plannedClosingDate);
+  row[COL.ACTUAL_JOB_CLOSING] = excelDate(job.invoice?.closingDate);
   row[COL.ORDER_VALUE] = Number(job.poValue);
   row[COL.REMARKS] = s(job.invoice?.comments);
   row[COL.COMMENT] = s(job.comments);
@@ -235,19 +235,24 @@ function buildRow(job: JobForExport, now: Date): BuiltRow {
   row[COL.TOTAL_DAYS_WIP] = wip === "" ? null : wip;
 
   const derived = deriveJobStatus(job, now);
-  row[COL.STATUS] = derived.isClosed ? (job.invoice?.closingDate ? "CLOSED" : "INVOICED") : TRACKER_STATUS[derived.currentStage as Exclude<StageName, "CLOSED">];
+  row[COL.STATUS] = derived.isClosed
+    ? job.invoice?.closingDate
+      ? "CLOSED"
+      : "INVOICED"
+    : TRACKER_STATUS[derived.currentStage as SlaStage];
 
   const status: ExportStatus = {
-    stageStatus: STAGE_STATUS_TEXT[derived.currentStatus] ?? derived.currentStatus,
+    stageStatus: derived.currentStatus.replace("_", " "), // "IN_PROGRESS" → "IN PROGRESS"
     daysInStage: derived.daysInCurrentStage,
     slaCompliant: derived.slaCompliant,
+    closedWithoutInvoice: derived.closedWithoutInvoice,
   };
   for (const col of EXTRA_COLUMNS) {
     const v = col.get(job, status);
     row.push(v instanceof Date ? excelDate(v) : v === undefined || v === "" ? null : v);
   }
 
-  return { values: row, closed: derived.isClosed, delayed: derived.currentStatus === "DELAYED" };
+  return { values: row, closed: derived.isClosed };
 }
 
 const thin = (argb: string): Partial<ExcelJS.Border> => ({ style: "thin", color: { argb } });
@@ -398,9 +403,9 @@ export async function exportSchedulerWorkbook(): Promise<Buffer> {
 
       // Day-count columns: the tracker's formula, with our computed value cached for viewers
       // that don't recalculate (and for the importer, which reads cached values).
-      const dayFormula = DAY_FORMULAS.find(([c]) => c === idx);
+      const dayFormula = DAY_FORMULA_BY_COL.get(idx);
       if (dayFormula) {
-        const [, later, earlier] = dayFormula;
+        const { later, earlier } = dayFormula;
         cell.value = {
           formula: `IF(AND(ISNUMBER(${ref(later)}),ISNUMBER(${ref(earlier)})),${ref(later)}-${ref(earlier)},"")`,
           result: value ?? "",

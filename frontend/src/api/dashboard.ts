@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { StageName } from "../types";
+import { Job, JobType, StageName } from "../types";
 import { apiClient } from "./client";
 
 export interface ChartBucket {
@@ -13,13 +13,6 @@ export interface StagePerformance {
   targetDays: number;
 }
 
-export interface CustomerPerformanceRow {
-  customer: string;
-  jobCount: number;
-  avgTurnaroundDays: number | null;
-  slaCompliancePercent: number;
-}
-
 export interface DashboardSummary {
   kpis: {
     totalJobsCreated: number;
@@ -30,7 +23,7 @@ export interface DashboardSummary {
     awaitingInvoice: number;
     closedJobs: number;
     jobsInvoiced: number;
-    /** Internal jobs closed with no invoice (in the month, or all time). */
+    /** Internal / warranty jobs closed with no invoice (in the month, or all time). */
     closedWithoutInvoiceCount: number;
     /** Their value: PO value, else quotation amount. */
     closedWithoutInvoiceValue: number;
@@ -64,11 +57,6 @@ export interface DashboardSummary {
     jobsInvoicedByWeek: ChartBucket[];
     quotationPerformance: { withinSla: number; outsideSla: number };
     slaComplianceTrend: ChartBucket[];
-    delayedByStage: ChartBucket[];
-    delayedByCreator: ChartBucket[];
-    delayedByTechnician: ChartBucket[];
-    topCustomersByRevenue: ChartBucket[];
-    customerPerformance: CustomerPerformanceRow[];
   };
 }
 
@@ -107,7 +95,7 @@ export interface MonthReceivedRow {
   id: string;
   referenceNumber: string;
   customer: string;
-  jobType: string;
+  jobType: JobType;
   jobCreatedDate: string | null;
   currentStage: StageName;
   poValue: number;
@@ -117,7 +105,7 @@ export interface MonthClosedNoInvoiceRow {
   id: string;
   referenceNumber: string;
   customer: string;
-  jobType: string;
+  jobType: JobType;
   closingDate: string | null;
   value: number;
   comments: string | null;
@@ -204,7 +192,9 @@ export function useDashboardSummary(month: string) {
     },
     // Keep showing the previous month while the next one loads, instead of flashing a spinner.
     placeholderData: keepPreviousData,
-    refetchInterval: 30_000,
+    // Changes made in the app refresh it straight away (mutations invalidate it); this only picks up
+    // other people's changes.
+    refetchInterval: 120_000,
   });
 }
 
@@ -243,16 +233,42 @@ export function useForecastMonthStatus(month: string) {
   });
 }
 
-/** The Forecast page's tick boxes: add jobs to / remove jobs from a month's forecast. */
+type AssignForecastInput = { set?: { jobId: string; amount: number }[]; clear?: string[] };
+
+/** The Forecast page's job list (all jobs, no filters). */
+const FORECAST_JOBS_KEY = ["jobs", {}];
+
+/**
+ * The Forecast page's tick boxes: add jobs to / remove jobs from a month's forecast. The job list
+ * is updated in place straight away, rather than refetching every job after each tick.
+ */
 export function useAssignForecast(month: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { set?: { jobId: string; amount: number }[]; clear?: string[] }) => {
+    mutationFn: async (input: AssignForecastInput) => {
       const { data } = await apiClient.put<{ updated: number }>(`/forecast/${month}/jobs`, input);
       return data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+    onMutate: async ({ set = [], clear = [] }) => {
+      await queryClient.cancelQueries({ queryKey: FORECAST_JOBS_KEY, exact: true });
+      const previous = queryClient.getQueryData<Job[]>(FORECAST_JOBS_KEY);
+      const amounts = new Map(set.map((s) => [s.jobId, s.amount]));
+      queryClient.setQueryData<Job[]>(FORECAST_JOBS_KEY, (jobs) =>
+        jobs?.map((job) => {
+          if (amounts.has(job.id)) return { ...job, forecastMonth: month, forecastAmount: amounts.get(job.id)! };
+          if (clear.includes(job.id) && job.forecastMonth === month) return { ...job, forecastMonth: null, forecastAmount: null };
+          return job;
+        })
+      );
+      return { previous };
+    },
+    onError: (_err, _input, context) => {
+      if (context?.previous) queryClient.setQueryData(FORECAST_JOBS_KEY, context.previous);
+      queryClient.invalidateQueries({ queryKey: FORECAST_JOBS_KEY, exact: true });
+    },
+    onSettled: () => {
+      // Other job views pick the change up next time they're shown.
+      queryClient.invalidateQueries({ queryKey: ["jobs"], refetchType: "none" });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["forecast"] });
     },

@@ -9,6 +9,7 @@ import {
   useRunSchedulerImport,
 } from "../../api/importExport";
 import { Alert, Badge, Button, Card, CardTitle, PageHeader } from "../../components/ui";
+import { apiErrorMessage } from "../../api/client";
 
 export function DataImportExportPage() {
   const { user } = useAuth();
@@ -108,12 +109,12 @@ export function DataImportExportPage() {
 
           {previewMutation.isError && (
             <Alert severity="error" className="mt-4">
-              {(previewMutation.error as any)?.response?.data?.error ?? "Could not read that file"}
+              {apiErrorMessage(previewMutation.error, "Could not read that file")}
             </Alert>
           )}
           {importMutation.isError && (
             <Alert severity="error" className="mt-4">
-              {(importMutation.error as any)?.response?.data?.error ?? "Import failed"}
+              {apiErrorMessage(importMutation.error, "Import failed")}
             </Alert>
           )}
 

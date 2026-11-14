@@ -41,6 +41,7 @@ router.patch(
     const noInvoice = isNonInvoicedJobType(job.jobType);
 
     let write: Record<string, unknown>;
+    let completedOn: Date | null; // when this stage completes, for the SLA check
     if (noInvoice) {
       if (data.invoiceDate || data.invoiceNumber || data.invoiceAmount !== undefined) {
         throw new HttpError(
@@ -48,23 +49,19 @@ router.patch(
           "Internal and warranty jobs aren't invoiced — change the job's Service Type if this one should be invoiced"
         );
       }
-      const closingDate = data.closingDate ?? job.invoice?.closingDate ?? null;
-      if (!closingDate) throw new HttpError(400, "Enter the closing date to close the job");
-      const sla = invoiceSla(job.dispatch.dispatchDate, closingDate);
-      if (sla.status === "RED" && !(data.delayReason ?? job.invoice?.delayReason)) {
-        throw new HttpError(400, "Delay reason is required: closing has exceeded the 7-day SLA target");
-      }
-      write = { ...data, closedWithoutInvoice: true, closingDate, invoiceDate: null, invoiceNumber: null, invoiceAmount: null };
+      completedOn = data.closingDate ?? job.invoice?.closingDate ?? null;
+      if (!completedOn) throw new HttpError(400, "Enter the closing date to close the job");
+      write = { ...data, closingDate: completedOn, invoiceDate: null, invoiceNumber: null, invoiceAmount: null };
     } else {
-      const effectiveInvoiceDate = data.invoiceDate ?? job.invoice?.invoiceDate ?? null;
-      const sla = invoiceSla(job.dispatch.dispatchDate, effectiveInvoiceDate);
-      const hasDelayReason = data.delayReason ?? job.invoice?.delayReason;
-      if (sla.status === "RED" && !hasDelayReason) {
-        throw new HttpError(400, "Delay reason is required: invoicing has exceeded the 7-day SLA target");
-      }
+      completedOn = data.invoiceDate ?? job.invoice?.invoiceDate ?? null;
       // Job auto-closes once invoicing is complete: default closingDate to invoiceDate if not supplied.
-      const closingDate = data.closingDate ?? (data.invoiceDate ? data.invoiceDate : undefined);
-      write = { ...data, closedWithoutInvoice: false, closingDate };
+      write = { ...data, closingDate: data.closingDate ?? data.invoiceDate };
+    }
+
+    const sla = invoiceSla(job.dispatch.dispatchDate, completedOn);
+    if (sla.status === "RED" && !(data.delayReason ?? job.invoice?.delayReason)) {
+      const step = noInvoice ? "closing" : "invoicing";
+      throw new HttpError(400, `Delay reason is required: ${step} has exceeded the 7-day SLA target`);
     }
 
     const before = job.invoice ?? {};

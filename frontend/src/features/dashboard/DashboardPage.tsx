@@ -19,14 +19,15 @@ import {
 } from "lucide-react";
 import { useDashboardSummary } from "../../api/dashboard";
 import { useThemeMode } from "../../theme/ThemeProvider";
-import { getCategoricalPalette, getStatusPalette } from "../../theme/chartPalette";
+import { getCategoricalPalette, STATUS_COLORS } from "../../theme/chartPalette";
 import { StatTile } from "./StatTile";
 import { ChartCard } from "./charts/ChartCard";
 import { TrendLineChart } from "./charts/TrendLineChart";
 import { CategoryBarChart } from "./charts/CategoryBarChart";
 import { MonthDetailCard } from "./MonthDetailCard";
 import { ForecastSection } from "./ForecastSection";
-import { ALL_TIME, MonthPicker, currentMonthKey } from "./MonthPicker";
+import { MonthPicker } from "./MonthPicker";
+import { currentMonthKey } from "../../utils/month";
 import { formatCurrency as currency } from "../../utils/currency";
 import { useAuth } from "../../auth/AuthContext";
 import { PageHeader, PageSpinner, SectionHeading, Segmented } from "../../components/ui";
@@ -43,10 +44,9 @@ export function DashboardPage() {
   // back/forward, and can be shared. Default: the current month.
   const [searchParams, setSearchParams] = useSearchParams();
   const month = searchParams.get("month") ?? currentMonthKey();
-  const { data, isLoading, isFetching } = useDashboardSummary(month);
+  const { data, isLoading, isPlaceholderData } = useDashboardSummary(month);
   const { mode } = useThemeMode();
   const categorical = getCategoricalPalette(mode);
-  const status = getStatusPalette(mode);
   const [jobsPeriod, setJobsPeriod] = useState<Period>("month");
   const [financePeriod, setFinancePeriod] = useState<Period>("month");
 
@@ -85,7 +85,8 @@ export function DashboardPage() {
   const jobValueTrend = financePeriod === "month" ? charts.jobValueByMonth : charts.jobValueByWeek;
 
   return (
-    <div className={isFetching && !isLoading ? "opacity-70 transition-opacity" : "transition-opacity"}>
+    // Dim only while switching months (old month shown as a placeholder), not on background refreshes.
+    <div className={isPlaceholderData ? "opacity-70 transition-opacity" : "transition-opacity"}>
       <PageHeader
         title="Dashboard"
         subtitle={
@@ -98,12 +99,13 @@ export function DashboardPage() {
       </PageHeader>
 
       <SectionHeading>{isMonth ? `${periodName} activity` : "All-time totals"}</SectionHeading>
-      <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+      <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-9">
         <StatTile label={isMonth ? "Jobs Received" : "Total Jobs Created"} value={kpis.totalJobsCreated} icon={Briefcase} />
         <StatTile label="Jobs Invoiced" value={kpis.jobsInvoiced} icon={ReceiptText} />
-        <StatTile label={isMonth ? "Invoiced Value" : "Total Invoiced Value"} value={currency(kpis.totalInvoicedValue)} icon={Wallet} />
+        <StatTile wide label={isMonth ? "Invoiced Value" : "Total Invoiced Value"} value={currency(kpis.totalInvoicedValue)} icon={Wallet} />
         <StatTile label="Jobs Closed" value={kpis.closedJobs} icon={CheckCircle2} />
         <StatTile
+          wide
           label="Closed Without Invoice"
           value={currency(kpis.closedWithoutInvoiceValue)}
           sub={`${kpis.closedInternalCount} internal · ${kpis.closedWarrantyCount} warranty`}
@@ -114,7 +116,7 @@ export function DashboardPage() {
       </div>
 
       <SectionHeading>Pipeline {asOfLabel}</SectionHeading>
-      <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
+      <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-9">
         <StatTile label="Waiting for Quotation" value={kpis.waitingForQuotation} icon={FileText} />
         <StatTile label="Waiting for PO" value={kpis.waitingForPO} icon={Hourglass} />
         <StatTile label="Jobs in Repair" value={kpis.inRepair} icon={Wrench} />
@@ -127,6 +129,7 @@ export function DashboardPage() {
           tone={kpis.delayedJobs > 0 ? "critical" : "default"}
         />
         <StatTile
+          wide
           label="Open Job Value"
           value={currency(kpis.totalOpenJobValue)}
           sub={
@@ -237,7 +240,7 @@ export function DashboardPage() {
         <ChartCard title="SLA Compliance Trend">
           <TrendLineChart
             categories={charts.slaComplianceTrend.map((b) => b.label)}
-            series={[{ label: "SLA Compliance", data: charts.slaComplianceTrend.map((b) => b.value), color: status.good }]}
+            series={[{ label: "SLA Compliance", data: charts.slaComplianceTrend.map((b) => b.value), color: STATUS_COLORS.good }]}
             valueFormatter={(v) => (v === null ? "" : `${v}%`)}
           />
         </ChartCard>

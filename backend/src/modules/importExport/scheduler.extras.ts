@@ -1,5 +1,12 @@
 import { Priority } from "@prisma/client";
-import { cellToDate, cellToNumber, cellToString, MappedSchedulerRow } from "./scheduler.mapping";
+import { MONTH_KEY_RE, monthKeyOf } from "../../lib/months";
+import {
+  cellToDate as date,
+  cellToNumber as num,
+  cellToString as text,
+  MappedSchedulerRow,
+  normalizeHeader,
+} from "./scheduler.mapping";
 
 /*
  * App-only columns — every job field the app stores that the original "SCHEDULER 2025" tracker has
@@ -47,7 +54,6 @@ export interface ExportJob {
     invoiceDate: Date | null;
     invoiceAmount: number | null;
     delayReason: string | null;
-    closedWithoutInvoice: boolean | null;
   } | null;
 }
 
@@ -56,6 +62,7 @@ export interface ExportStatus {
   stageStatus: string;
   daysInStage: number | null;
   slaCompliant: boolean;
+  closedWithoutInvoice: boolean;
 }
 
 export interface ExtraColumn {
@@ -73,10 +80,6 @@ export interface ExtraGroup {
 }
 
 const PRIORITIES: Priority[] = ["HIGH", "MEDIUM", "LOW"];
-
-const text = (v: unknown) => cellToString(v);
-const date = (v: unknown) => cellToDate(v);
-const num = (v: unknown) => cellToNumber(v);
 
 function section<K extends "quotation" | "repair" | "dispatch" | "invoice">(row: MappedSchedulerRow, key: K) {
   return (row[key] ??= {} as NonNullable<MappedSchedulerRow[K]>) as NonNullable<MappedSchedulerRow[K]>;
@@ -145,15 +148,8 @@ export const EXTRA_GROUPS: ExtraGroup[] = [
       { header: "INVOICE DATE:", kind: "date", width: 13, get: (j) => j.invoice?.invoiceDate, set: (r, v) => assign(() => section(r, "invoice"), "invoiceDate", date(v)) },
       { header: "INVOICE AMOUNT:", kind: "money", width: 16, get: (j) => j.invoice?.invoiceAmount, set: (r, v) => assign(() => section(r, "invoice"), "invoiceAmount", num(v)) },
       { header: "INVOICE DELAY REASON:", kind: "text", width: 28, get: (j) => j.invoice?.delayReason, set: (r, v) => assign(() => section(r, "invoice"), "delayReason", text(v)) },
-      {
-        header: "CLOSED WITHOUT INVOICE:",
-        kind: "text",
-        width: 13,
-        get: (j) => (j.invoice?.closedWithoutInvoice ? "YES" : null),
-        set: (r, v) => {
-          if (text(v)?.toUpperCase() === "YES") section(r, "invoice").closedWithoutInvoice = true;
-        },
-      },
+      // Derived from the Service Type (internal / warranty), so it isn't read back on import.
+      { header: "CLOSED WITHOUT INVOICE:", kind: "text", width: 13, get: (_j, s) => (s.closedWithoutInvoice ? "YES" : null) },
     ],
   },
   {
@@ -167,8 +163,8 @@ export const EXTRA_GROUPS: ExtraGroup[] = [
         set: (r, v) => {
           // Accept "2026-11" text, or a date cell (Excel may turn the text into a date).
           const d = date(v);
-          const m = d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` : text(v);
-          if (m && /^\d{4}-(0[1-9]|1[0-2])$/.test(m)) r.job.forecastMonth = m;
+          const m = d ? monthKeyOf(d) : text(v);
+          if (m && MONTH_KEY_RE.test(m)) r.job.forecastMonth = m;
         },
       },
       { header: "FORECAST AMOUNT:", kind: "money", width: 16, get: (j) => j.forecastAmount, set: (r, v) => assign(() => r.job, "forecastAmount", num(v)) },
@@ -187,14 +183,12 @@ export const EXTRA_GROUPS: ExtraGroup[] = [
 
 export const EXTRA_COLUMNS: ExtraColumn[] = EXTRA_GROUPS.flatMap((g) => g.columns);
 
-const norm = (v: unknown) => String(v ?? "").trim().toUpperCase();
-
 /** Locates each importable app-only column in a header row → [column index, column]. */
 export function locateExtraColumns(headerRow: unknown[]): Array<[number, ExtraColumn]> {
   const found: Array<[number, ExtraColumn]> = [];
   for (const col of EXTRA_COLUMNS) {
     if (!col.set) continue;
-    const idx = headerRow.findIndex((h) => norm(h) === col.header);
+    const idx = headerRow.findIndex((h) => normalizeHeader(h) === col.header);
     if (idx >= 0) found.push([idx, col]);
   }
   return found;

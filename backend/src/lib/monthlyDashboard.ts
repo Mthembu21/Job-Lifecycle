@@ -1,7 +1,8 @@
 import { JobDto, JobWithListRelations, toJobDto } from "../modules/jobs/jobs.dto";
-import { buildDashboardSummary, closedWithoutInvoiceKpis, weekKey } from "./analytics";
+import { buildDashboardSummary, closedWithoutInvoiceKpis, wholeDaysBetween, weekKey } from "./analytics";
 import { jobAsOf } from "./asOf";
-import { StageName } from "./statusEngine";
+import { JOB_TYPE_LABELS, SLA_STAGES, STAGE_LABELS, jobValue, toNumber } from "./labels";
+import { monthKeyOf, monthWindow } from "./months";
 
 /*
  * Dashboard for a single calendar month ("2026-10").
@@ -15,18 +16,6 @@ import { StageName } from "./statusEngine";
  *    re-derived, so "Waiting for PO" for October lists the jobs that were quoted but had no PO yet on
  *    31 October. For the current month that's simply the position today.
  */
-
-const MONTH_RE = /^(\d{4})-(0[1-9]|1[0-2])$/;
-
-export function parseMonth(value: unknown): { year: number; month: number } | null {
-  if (typeof value !== "string") return null;
-  const m = MONTH_RE.exec(value);
-  return m ? { year: Number(m[1]), month: Number(m[2]) } : null;
-}
-
-export function monthKeyOf(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-}
 
 /** Every month from the earliest job up to the current month, newest first. */
 export function availableMonths(jobs: { jobCreatedDate: Date }[], now = new Date()): string[] {
@@ -44,53 +33,14 @@ export function availableMonths(jobs: { jobCreatedDate: Date }[], now = new Date
   return months;
 }
 
-function toNumber(value: unknown): number {
-  return value === null || value === undefined ? 0 : Number(value);
+function average(values: number[]): number {
+  return values.length === 0 ? 0 : Math.round(values.reduce((sum, v) => sum + v, 0) / values.length);
 }
 
-/** A job's value when there's no invoice amount: PO value, else the quotation amount. */
-export function jobValue(j: JobDto): number {
-  return toNumber(j.poValue) || toNumber(j.quotation?.quotationAmount);
-}
-
-const STAGE_LABELS: Record<Exclude<StageName, "CLOSED">, string> = {
-  QUOTATION: "Quotation",
-  AWAITING_PO: "Awaiting PO",
-  REPAIR: "Repair",
-  DISPATCH: "Dispatch",
-  INVOICING: "Invoicing",
-};
-
-const JOB_TYPE_LABELS: Record<string, string> = {
-  WARRANTY: "Warranty",
-  CUSTOMER_REPAIR: "Customer Repair",
-  INTERNAL: "Internal",
-  SERVICE: "Service",
-  REBUILD: "Rebuild",
-  INSURANCE: "Insurance",
-  OTHER: "Other",
-};
-
-/** The date on which each SLA stage is completed. */
-const STAGE_COMPLETED_ON: Record<Exclude<StageName, "CLOSED">, (j: JobDto) => Date | null | undefined> = {
-  QUOTATION: (j) => j.quotation?.epirocQuotationDate,
-  AWAITING_PO: (j) => j.repair?.purchaseOrderDate,
-  REPAIR: (j) => j.repair?.repairCompletionDate,
-  DISPATCH: (j) => j.dispatch?.dispatchDate,
-  INVOICING: (j) => j.invoice?.invoiceDate ?? (j.status.closedWithoutInvoice ? j.invoice?.closingDate : null),
-};
+const iso = (d: Date | string | null | undefined) => (d ? new Date(d).toISOString() : null);
 
 export function buildMonthlyDashboard(rawJobs: JobWithListRelations[], year: number, month: number, now = new Date()) {
-  const start = new Date(year, month - 1, 1);
-  const endOfMonth = new Date(new Date(year, month, 1).getTime() - 1);
-  const isCurrentMonth = endOfMonth.getTime() > now.getTime();
-  const asOf = isCurrentMonth ? now : endOfMonth;
-
-  const inMonth = (d: Date | string | null | undefined) => {
-    if (!d) return false;
-    const t = new Date(d).getTime();
-    return t >= start.getTime() && t <= asOf.getTime();
-  };
+  const { key, start, endOfMonth, isCurrentMonth, asOf, inMonth } = monthWindow(year, month, now);
 
   // Jobs opened by the end of the month, rewound to how they stood at the cut-off. (Job Opening
   // defaults to 3 business days after receipt, so in the current month it can be a few days
@@ -98,36 +48,28 @@ export function buildMonthlyDashboard(rawJobs: JobWithListRelations[], year: num
   const snapshot = rawJobs
     .filter((j) => j.jobCreatedDate.getTime() <= endOfMonth.getTime())
     .map((j) => toJobDto(jobAsOf(j, asOf), asOf));
-  const openedInMonth = (d: Date | string) => {
-    const t = new Date(d).getTime();
-    return t >= start.getTime() && t <= endOfMonth.getTime();
-  };
 
   // Weekly buckets covering just this month.
   const weekKeys: string[] = [];
   for (let d = new Date(start); d.getTime() <= asOf.getTime(); d.setDate(d.getDate() + 7)) {
-    const key = weekKey(d);
-    if (!weekKeys.includes(key)) weekKeys.push(key);
+    const week = weekKey(d);
+    if (!weekKeys.includes(week)) weekKeys.push(week);
   }
   const lastWeek = weekKey(asOf);
   if (!weekKeys.includes(lastWeek)) weekKeys.push(lastWeek);
 
   const base = buildDashboardSummary(snapshot, { anchor: asOf, weekKeys });
 
-  const received = snapshot.filter((j) => openedInMonth(j.jobCreatedDate));
+  const received = snapshot.filter((j) => j.jobCreatedDate >= start && j.jobCreatedDate <= endOfMonth);
   const invoiced = snapshot.filter((j) => inMonth(j.invoice?.invoiceDate));
-  // Only jobs that are actually closed (invoiced, or internal/warranty closed without invoice) — a
-  // closing date typed in before a customer job is invoiced doesn't close it.
-  const closed = snapshot.filter((j) => j.status.isClosed && inMonth(j.invoice?.closingDate ?? j.invoice?.invoiceDate));
-  // Worked on during the month = not already closed (invoiced, or closed without invoice) before the 1st.
-  const doneDate = (j: JobDto) => j.invoice?.invoiceDate ?? (j.status.closedWithoutInvoice ? j.invoice?.closingDate : null);
+  const closed = snapshot.filter((j) => inMonth(j.status.closedOn));
+  // Worked on during the month = the invoicing stage wasn't already finished before the 1st.
+  const invoicingDone = (j: JobDto) => j.status.stages.find((s) => s.name === "INVOICING")!.completedOn;
   const active = snapshot.filter((j) => {
-    const d = doneDate(j);
-    return !(d && new Date(d) < start);
+    const done = invoicingDone(j);
+    return !(done && done < start);
   });
-  // Internal jobs closed in the month with no invoice — valued at PO value (or quote).
   const closedNoInvoice = closed.filter((j) => j.status.closedWithoutInvoice);
-  const woSetInMonth = snapshot.filter((j) => inMonth(j.woNumberSetAt));
   const quotedInMonth = snapshot.filter((j) => inMonth(j.quotation?.epirocQuotationDate));
 
   const invoicedValue = invoiced.reduce((s, j) => s + toNumber(j.invoice?.invoiceAmount), 0);
@@ -140,36 +82,27 @@ export function buildMonthlyDashboard(rawJobs: JobWithListRelations[], year: num
     totalInvoicedValue: invoicedValue,
     closedJobs: closed.length,
     ...closedWithoutInvoiceKpis(closedNoInvoice),
-    avgTurnaroundDays:
-      closed.length === 0 ? 0 : Math.round(closed.reduce((s, j) => s + j.status.totalJobAge, 0) / closed.length),
+    avgTurnaroundDays: average(closed.map((j) => j.status.totalJobAge)),
     slaCompliancePercent:
       active.length === 0 ? 100 : Math.round((active.filter((j) => j.status.slaCompliant).length / active.length) * 100),
-    avgDaysToWoNumber:
-      woSetInMonth.length === 0
-        ? 0
-        : Math.round(
-            woSetInMonth.reduce(
-              (s, j) =>
-                s + Math.max(0, Math.round((new Date(j.woNumberSetAt!).getTime() - new Date(j.jobCreatedDate).getTime()) / 86_400_000)),
-              0
-            ) / woSetInMonth.length
-          ),
+    avgDaysToWoNumber: average(
+      snapshot.filter((j) => inMonth(j.woNumberSetAt)).map((j) => wholeDaysBetween(j.jobCreatedDate, j.woNumberSetAt!))
+    ),
   };
 
   const typeCounts = new Map<string, number>();
   for (const j of received) typeCounts.set(j.jobType, (typeCounts.get(j.jobType) ?? 0) + 1);
-  const jobsByType = Object.keys(JOB_TYPE_LABELS).map((key) => ({ label: JOB_TYPE_LABELS[key], value: typeCounts.get(key) ?? 0 }));
+  const jobsByType = Object.keys(JOB_TYPE_LABELS).map((type) => ({ label: JOB_TYPE_LABELS[type], value: typeCounts.get(type) ?? 0 }));
 
   // Average days for stages *completed during this month*, against target.
-  const avgDaysPerStage = (Object.keys(STAGE_LABELS) as Array<Exclude<StageName, "CLOSED">>).map((stage) => {
+  const avgDaysPerStage = SLA_STAGES.map((stage, i) => {
     const done = snapshot
-      .filter((j) => inMonth(STAGE_COMPLETED_ON[stage](j)))
-      .map((j) => j.status.stages.find((s) => s.name === stage))
-      .filter((s) => s && s.sla.days !== null);
+      .map((j) => j.status.stages.find((s) => s.name === stage)!)
+      .filter((s) => inMonth(s.completedOn) && s.sla.days !== null);
     return {
       label: STAGE_LABELS[stage],
-      actualDays: done.length === 0 ? 0 : Math.round(done.reduce((s, x) => s + (x!.sla.days ?? 0), 0) / done.length),
-      targetDays: done[0]?.sla.target ?? base.charts.avgDaysPerStage.find((p) => p.label === STAGE_LABELS[stage])?.targetDays ?? 0,
+      actualDays: average(done.map((s) => s.sla.days ?? 0)),
+      targetDays: done[0]?.sla.target ?? base.charts.avgDaysPerStage[i].targetDays,
     };
   });
 
@@ -185,7 +118,7 @@ export function buildMonthlyDashboard(rawJobs: JobWithListRelations[], year: num
     { label: isCurrentMonth ? "Open Job Value (today)" : "Open Job Value (month end)", value: base.kpis.totalOpenJobValue },
   ];
 
-  const iso = (d: Date | string | null | undefined) => (d ? new Date(d).toISOString() : null);
+  const byDateDesc = <T>(dateOf: (r: T) => string | null) => (a: T, b: T) => (dateOf(b) ?? "").localeCompare(dateOf(a) ?? "");
 
   const monthDetail = {
     invoiced: invoiced
@@ -198,7 +131,7 @@ export function buildMonthlyDashboard(rawJobs: JobWithListRelations[], year: num
         invoiceAmount: toNumber(j.invoice?.invoiceAmount),
         poValue: toNumber(j.poValue),
       }))
-      .sort((a, b) => (b.invoiceDate ?? "").localeCompare(a.invoiceDate ?? "")),
+      .sort(byDateDesc((r) => r.invoiceDate)),
     awaitingPo: snapshot
       .filter((j) => j.status.currentStage === "AWAITING_PO")
       .map((j) => {
@@ -221,30 +154,30 @@ export function buildMonthlyDashboard(rawJobs: JobWithListRelations[], year: num
         id: j.id,
         referenceNumber: j.referenceNumber,
         customer: j.customer,
-        jobType: JOB_TYPE_LABELS[j.jobType] ?? j.jobType,
+        jobType: j.jobType,
         jobCreatedDate: iso(j.jobCreatedDate),
         currentStage: j.status.currentStage,
         poValue: toNumber(j.poValue),
       }))
-      .sort((a, b) => (b.jobCreatedDate ?? "").localeCompare(a.jobCreatedDate ?? "")),
+      .sort(byDateDesc((r) => r.jobCreatedDate)),
     closedNoInvoice: closedNoInvoice
       .map((j) => ({
         id: j.id,
         referenceNumber: j.referenceNumber,
         customer: j.customer,
-        jobType: JOB_TYPE_LABELS[j.jobType] ?? j.jobType,
-        closingDate: iso(j.invoice?.closingDate),
+        jobType: j.jobType,
+        closingDate: iso(j.status.closedOn),
         value: jobValue(j),
         comments: j.invoice?.comments ?? null,
       }))
-      .sort((a, b) => (b.closingDate ?? "").localeCompare(a.closingDate ?? "")),
+      .sort(byDateDesc((r) => r.closingDate)),
   };
 
   return {
     kpis,
     charts: { ...base.charts, jobsByType, avgDaysPerStage, quotationPerformance, valueBreakdown },
     period: {
-      month: `${year}-${String(month).padStart(2, "0")}`,
+      month: key,
       label: start.toLocaleDateString("en-ZA", { month: "long", year: "numeric" }),
       start: start.toISOString(),
       asOf: asOf.toISOString(),

@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { Job, JobType } from "../../types";
 import { useUpdateJob } from "../../api/jobs";
+import { apiErrorMessage } from "../../api/client";
 import { JOB_TYPE_LABELS } from "../../constants";
 import { isNonInvoicedJobType } from "../../utils/jobTypes";
-import { Alert, Button, Dialog, TextField } from "../../components/ui";
+import { Alert, TextField } from "../../components/ui";
+import { FormDialog } from "../../components/FormDialog";
 
 /** Change a job's Service Type — it decides whether the job is invoiced or closed without invoice. */
 export function JobTypeDialog({ job, onClose }: { job: Job; onClose: () => void }) {
@@ -11,9 +13,8 @@ export function JobTypeDialog({ job, onClose }: { job: Job; onClose: () => void 
   const [jobType, setJobType] = useState<JobType>(job.jobType);
   const [error, setError] = useState<string | null>(null);
 
-  const wasNonInvoiced = isNonInvoicedJobType(job.jobType);
   const willBeNonInvoiced = isNonInvoicedJobType(jobType);
-  const switching = jobType !== job.jobType && wasNonInvoiced !== willBeNonInvoiced;
+  const switching = jobType !== job.jobType && isNonInvoicedJobType(job.jobType) !== willBeNonInvoiced;
 
   async function save() {
     setError(null);
@@ -21,44 +22,35 @@ export function JobTypeDialog({ job, onClose }: { job: Job; onClose: () => void 
     try {
       await updateJob.mutateAsync({ jobType });
       onClose();
-    } catch (err: any) {
-      setError(err?.response?.data?.error ?? "Failed to change the Service Type");
+    } catch (err) {
+      setError(apiErrorMessage(err, "Failed to change the Service Type"));
     }
   }
 
   return (
-    <Dialog
+    <FormDialog
       size="xs"
+      columns={1}
       title={`Service Type — ${job.referenceNumber}`}
+      error={error}
+      submitting={updateJob.isPending}
+      onSave={save}
       onClose={onClose}
-      actions={
-        <>
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button variant="primary" onClick={save} loading={updateJob.isPending}>
-            Save
-          </Button>
-        </>
-      }
     >
-      <div className="flex flex-col gap-3">
-        {error && <Alert severity="error">{error}</Alert>}
-        <TextField select label="Service Type" value={jobType} onChange={(e) => setJobType(e.target.value as JobType)}>
-          {Object.entries(JOB_TYPE_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </TextField>
-        {switching && (
-          <Alert severity="warning">
-            {willBeNonInvoiced
-              ? `${JOB_TYPE_LABELS[jobType]} jobs aren't invoiced: the last step becomes "Close Job", and any invoice forecast on this job is removed.`
-              : "This job will be invoiced: the last step becomes \"Invoice\". If it was already closed without an invoice, it reopens as awaiting invoice."}
-          </Alert>
-        )}
-      </div>
-    </Dialog>
+      <TextField select label="Service Type" value={jobType} onChange={(e) => setJobType(e.target.value as JobType)}>
+        {Object.entries(JOB_TYPE_LABELS).map(([value, label]) => (
+          <option key={value} value={value}>
+            {label}
+          </option>
+        ))}
+      </TextField>
+      {switching && (
+        <Alert severity="warning">
+          {willBeNonInvoiced
+            ? `${JOB_TYPE_LABELS[jobType]} jobs aren't invoiced: the last step becomes "Close Job", and any invoice forecast on this job is removed.`
+            : 'This job will be invoiced: the last step becomes "Invoice". If it was already closed without an invoice, it reopens as awaiting invoice.'}
+        </Alert>
+      )}
+    </FormDialog>
   );
 }

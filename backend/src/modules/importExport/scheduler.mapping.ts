@@ -1,8 +1,7 @@
 import { JobType, Priority } from "@prisma/client";
 
 export const SCHEDULER_SHEET_NAME = "SCHEDULER 2025";
-export const GROUP_HEADER_ROW = 0;
-export const FIELD_HEADER_ROW = 1;
+/** In the original tracker, data starts on the 3rd row (group banner, then column headers). */
 export const DATA_START_ROW = 2;
 
 // 0-based column indices, matching the "SCHEDULER 2025" tab of the tracker workbook.
@@ -51,7 +50,7 @@ export const COL = {
   TURN_AROUND: 41,
 } as const;
 
-// Exact header text for each column above (row FIELD_HEADER_ROW), used to rebuild the sheet on export.
+// Exact header text for each column above (the tracker's column-header row), used to rebuild the sheet on export.
 export const HEADERS: string[] = [
   "REFERENCE/DIV:",
   "DESCRIPTION:",
@@ -105,7 +104,8 @@ export const GROUP_HEADERS: Array<{ col: number; label: string }> = [
 ];
 
 // Columns that only hold spreadsheet formulas (day counts / turnaround) - never trusted from the
-// source file (the recovered workbook has corrupted values in these), always recomputed on export.
+// source file (the recovered workbook has corrupted values in these), always recomputed on export
+// (see DAY_FORMULAS in scheduler.export.ts).
 export const COMPUTED_DAY_COLUMNS = new Set<number>([
   COL.ASSESSMENT_DAYS,
   COL.STRIP_QUOTE_DAYS,
@@ -135,6 +135,11 @@ export function mapServiceTypeToJobType(value: unknown): JobType {
 export function jobTypeToServiceType(jobType: JobType): string {
   const entry = Object.entries(SERVICE_TYPE_TO_JOB_TYPE).find(([, v]) => v === jobType);
   return entry ? entry[0] : jobType;
+}
+
+/** Header text compared case- and whitespace-insensitively. */
+export function normalizeHeader(value: unknown): string {
+  return String(value ?? "").trim().toUpperCase();
 }
 
 export function cellToString(value: unknown): string | undefined {
@@ -252,7 +257,6 @@ export interface MappedSchedulerRow {
     invoiceDate?: Date;
     invoiceAmount?: number;
     delayReason?: string;
-    closedWithoutInvoice?: boolean;
   };
   legacySheetRow: Record<string, string | number | null>;
 }

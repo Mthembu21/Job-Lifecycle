@@ -11,10 +11,13 @@ import { canCreateJob, canDeleteJob, canEditJobFields } from "../../auth/permiss
 import { Job, Priority } from "../../types";
 import { formatCurrency } from "../../utils/currency";
 import { formatDate, daysBetween } from "../../utils/date";
+import { currentStageSla } from "../../utils/jobStatus";
+import { plural } from "../../utils/text";
 import { DeleteJobDialog } from "./DeleteJobDialog";
 import { JobFieldDialog } from "./JobFieldDialog";
 import { BulkDeleteJobsDialog } from "./BulkDeleteJobsDialog";
 import { Badge, BadgeTone, Button, Card, Checkbox, IconButton, PageHeader, PageSpinner, cn } from "../../components/ui";
+import { EmptyRow, STICKY_THEAD, TH, TD as TD_BASE } from "../../components/ui/Table";
 
 const PRIORITY_TONE: Record<Priority, BadgeTone> = {
   HIGH: "danger",
@@ -22,13 +25,7 @@ const PRIORITY_TONE: Record<Priority, BadgeTone> = {
   LOW: "neutral",
 };
 
-const TH = "px-3 py-2.5 text-left text-xs font-semibold tracking-wide whitespace-nowrap text-gray-600 uppercase dark:text-gray-300";
-const TD = "px-3 py-2.5 whitespace-nowrap";
-
-function currentStageSla(job: Job) {
-  if (job.status.isClosed) return null;
-  return job.status.stages.find((s) => s.name === job.status.currentStage)?.sla ?? null;
-}
+const TD = `${TD_BASE} whitespace-nowrap`;
 
 export function JobListPage() {
   const [filters, setFilters] = useState<JobFilters>({});
@@ -62,7 +59,7 @@ export function JobListPage() {
             Jobs
             {missingWoCount > 0 && (
               <Badge tone="warning" icon={<AlertTriangle />} onClick={() => setFilters({ ...filters, missingWo: "true" })}>
-                {missingWoCount} missing WO number{missingWoCount === 1 ? "" : "s"}
+                {plural(missingWoCount, "missing WO number")}
               </Badge>
             )}
           </span>
@@ -97,7 +94,7 @@ export function JobListPage() {
           <div className="max-h-[max(20rem,calc(100dvh-22rem))] overflow-auto overscroll-contain">
             <table className="w-full text-sm">
               {/* Sticky header: a box-shadow stands in for the bottom border, which doesn't stick. */}
-              <thead className="sticky top-0 z-10 bg-gray-50 shadow-[0_1px_0_var(--color-gray-200)] dark:bg-gray-800 dark:shadow-[0_1px_0_var(--color-gray-700)]">
+              <thead className={STICKY_THEAD}>
                 <tr>
                   {canBulkDelete && (
                     <th className="w-10 px-3 py-2.5">
@@ -208,11 +205,9 @@ export function JobListPage() {
                   );
                 })}
                 {jobs?.length === 0 && (
-                  <tr>
-                    <td colSpan={canBulkDelete ? 14 : 12} className="px-3 py-12 text-center text-gray-500 dark:text-gray-400">
+                  <EmptyRow cols={canBulkDelete ? 14 : 12}>
                       No jobs match the current filters.
-                    </td>
-                  </tr>
+                  </EmptyRow>
                 )}
               </tbody>
             </table>

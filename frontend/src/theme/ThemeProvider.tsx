@@ -1,6 +1,5 @@
 import { createContext, ReactNode, useContext, useEffect, useState } from "react";
-
-type Mode = "light" | "dark";
+import type { ThemeMode as Mode } from "./chartPalette";
 
 interface ThemeModeContextValue {
   mode: Mode;

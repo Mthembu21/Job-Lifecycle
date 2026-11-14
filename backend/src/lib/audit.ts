@@ -73,7 +73,6 @@ const FIELD_LABELS: Record<string, string> = {
   invoiceDate: "Invoice Date",
   invoiceAmount: "Invoice Amount",
   plannedClosingDate: "Planned Job Closing",
-  closedWithoutInvoice: "Closed Without Invoice",
   forecastMonth: "Forecast Invoice Month",
   forecastAmount: "Forecast Amount",
   closingDate: "Actual Job Closing",

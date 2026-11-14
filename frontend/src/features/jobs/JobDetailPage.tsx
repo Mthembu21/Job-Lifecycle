@@ -19,10 +19,11 @@ import { JOB_TYPE_LABELS, PRIORITY_LABELS, STAGE_LABELS } from "../../constants"
 import { SlaChip } from "../common/SlaChip";
 import { StageStatusChip } from "../common/StageStatusChip";
 import { formatDate, daysBetween } from "../../utils/date";
+import { currentStageSla } from "../../utils/jobStatus";
 import { formatCurrency } from "../../utils/currency";
 import { useAuth } from "../../auth/AuthContext";
 import { canEditJobFields, canDeleteJob } from "../../auth/permissions";
-import { Badge, Button, Card, CardTitle, IconButton, PageSpinner } from "../../components/ui";
+import { Badge, Button, Card, CardTitle, IconButton, PageHeader, PageSpinner } from "../../components/ui";
 
 const FIELD_LABELS: Record<JobEditableField, string> = {
   woNumber: "WO Number",
@@ -44,9 +45,7 @@ export function JobDetailPage() {
 
   if (isLoading || !job) return <PageSpinner />;
 
-  const currentStageSla = job.status.isClosed
-    ? null
-    : job.status.stages.find((s) => s.name === job.status.currentStage)?.sla ?? null;
+  const stageSla = currentStageSla(job);
   const canEdit = canEditJobFields(user?.role);
 
   const editButton = (field: JobEditableField) =>
@@ -69,22 +68,21 @@ export function JobDetailPage() {
         )}
       </div>
 
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-50">
+      <PageHeader
+        title={
+          <>
             {job.referenceNumber} <span className="font-normal text-gray-400">—</span> {job.customer}
-          </h1>
-          <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{job.description}</p>
-        </div>
-        <div className="flex gap-2">
-          <Badge size="md" tone="brand">
-            {PRIORITY_LABELS[job.priority]} priority
-          </Badge>
-          <Badge size="md" tone="outline">
-            {JOB_TYPE_LABELS[job.jobType]}
-          </Badge>
-        </div>
-      </div>
+          </>
+        }
+        subtitle={job.description}
+      >
+        <Badge size="md" tone="brand">
+          {PRIORITY_LABELS[job.priority]} priority
+        </Badge>
+        <Badge size="md" tone="outline">
+          {JOB_TYPE_LABELS[job.jobType]}
+        </Badge>
+      </PageHeader>
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <SummaryTile label="Current Stage">{STAGE_LABELS[job.status.currentStage]}</SummaryTile>
@@ -164,7 +162,7 @@ export function JobDetailPage() {
               />
               <DetailRow label="Order Value" value={formatCurrency(Number(job.poValue))} />
               <DetailRow label="Overall SLA Compliance" value={<SlaChip status={job.status.slaCompliant ? "GREEN" : "RED"} />} />
-              {currentStageSla && <DetailRow label="Current Stage SLA" value={<SlaChip status={currentStageSla.status} />} />}
+              {stageSla && <DetailRow label="Current Stage SLA" value={<SlaChip status={stageSla.status} />} />}
               {job.comments && <DetailRow label="Comment" value={job.comments} />}
             </dl>
           </Card>

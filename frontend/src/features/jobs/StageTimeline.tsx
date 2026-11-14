@@ -76,7 +76,7 @@ export function StageTimeline({
       label: isNonInvoicedJobType(job.jobType) ? "Close Job (no invoice)" : "Invoice",
       editStage: "invoice",
       hasData: Boolean(job.invoice),
-      completedDate: job.invoice?.invoiceDate ?? (job.status.closedWithoutInvoice ? job.invoice?.closingDate : null),
+      completedDate: job.status.stages.find((s) => s.name === "INVOICING")?.completedOn,
       responsible: job.status.closedWithoutInvoice
         ? `Closed without invoice (${JOB_TYPE_LABELS[job.jobType]})`
         : job.invoice?.invoiceNumber

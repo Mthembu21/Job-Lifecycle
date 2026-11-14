@@ -3,15 +3,16 @@ import { prisma } from "../../lib/prisma";
 import { asyncHandler, HttpError } from "../../middleware/errorHandler";
 import { authenticate } from "../../middleware/auth";
 import { buildDashboardSummary } from "../../lib/analytics";
-import { availableMonths, buildMonthlyDashboard, monthKeyOf, parseMonth } from "../../lib/monthlyDashboard";
-import { jobListInclude, toJobDto } from "../jobs/jobs.dto";
+import { availableMonths, buildMonthlyDashboard } from "../../lib/monthlyDashboard";
 import { buildForecastReport } from "../../lib/forecast";
+import { monthKeyOf, parseMonth } from "../../lib/months";
+import { jobListInclude, toJobDto } from "../jobs/jobs.dto";
 
 const router = Router();
 
 /**
- * GET /dashboard/summary            → all-time figures (as before)
- * GET /dashboard/summary?month=2026-10 → that month's activity + pipeline at month end
+ * GET /dashboard/summary                → all-time figures
+ * GET /dashboard/summary?month=2026-10  → that month's activity + pipeline at month end + forecast
  */
 router.get(
   "/summary",
@@ -22,17 +23,17 @@ router.get(
     const monthParam = req.query.month;
 
     if (monthParam === undefined || monthParam === "" || monthParam === "all") {
-      res.json({ ...buildDashboardSummary(jobs.map((j) => toJobDto(j))), period: null, monthDetail: null, forecast: null, availableMonths: months });
+      const summary = buildDashboardSummary(jobs.map((j) => toJobDto(j)));
+      res.json({ ...summary, period: null, monthDetail: null, forecast: null, availableMonths: months });
       return;
     }
 
-    const parsed = parseMonth(monthParam);
-    if (!parsed) throw new HttpError(400, "month must be in YYYY-MM format");
-    const requested = `${parsed.year}-${String(parsed.month).padStart(2, "0")}`;
-    if (requested > monthKeyOf(new Date())) throw new HttpError(400, "month cannot be in the future");
+    const month = parseMonth(monthParam);
+    if (!month) throw new HttpError(400, "month must be in YYYY-MM format");
+    if (month.key > monthKeyOf(new Date())) throw new HttpError(400, "month cannot be in the future");
 
-    const forecast = await buildForecastReport(jobs, parsed.year, parsed.month);
-    res.json({ ...buildMonthlyDashboard(jobs, parsed.year, parsed.month), forecast, availableMonths: months });
+    const forecast = await buildForecastReport(jobs, month.year, month.month);
+    res.json({ ...buildMonthlyDashboard(jobs, month.year, month.month), forecast, availableMonths: months });
   })
 );
 

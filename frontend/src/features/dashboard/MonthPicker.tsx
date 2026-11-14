@@ -1,16 +1,8 @@
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
-import { IconButton, cn } from "../../components/ui";
+import { Button, IconButton } from "../../components/ui";
+import { currentMonthKey, monthLabel } from "../../utils/month";
 
 export const ALL_TIME = "all";
-
-export function currentMonthKey(now = new Date()): string {
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-}
-
-export function monthLabel(key: string): string {
-  const [y, m] = key.split("-").map(Number);
-  return new Date(y, m - 1, 1).toLocaleDateString("en-ZA", { month: "long", year: "numeric" });
-}
 
 /**
  * Month selector: ‹ [October 2026 ▾] ›, plus "All time".
@@ -58,18 +50,9 @@ export function MonthPicker({
           <ChevronRight />
         </IconButton>
       </div>
-      <button
-        type="button"
-        onClick={() => onChange(isAll ? currentMonthKey() : ALL_TIME)}
-        className={cn(
-          "h-9 rounded-lg px-3 text-sm font-semibold transition-colors",
-          isAll
-            ? "bg-yellow text-gray-900 hover:bg-yellow-hover"
-            : "text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-        )}
-      >
+      <Button size="sm" className="h-9" variant={isAll ? "primary" : "ghost"} onClick={() => onChange(isAll ? currentMonthKey() : ALL_TIME)}>
         {isAll ? "This month" : "All time"}
-      </button>
+      </Button>
     </div>
   );
 }

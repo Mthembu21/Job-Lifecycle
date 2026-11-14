@@ -1,21 +1,21 @@
 import { ReactNode, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { MonthDetail } from "../../api/dashboard";
-import { STAGE_LABELS } from "../../constants";
+import { JOB_TYPE_LABELS, STAGE_LABELS } from "../../constants";
 import { formatCurrency } from "../../utils/currency";
 import { formatDate } from "../../utils/date";
 import { Badge, Card, Segmented, cn } from "../../components/ui";
+import { EmptyRow, STICKY_THEAD, TH, TD as TD_BASE } from "../../components/ui/Table";
 
 type Tab = "invoiced" | "awaitingPo" | "received" | "closedNoInvoice";
 
-const TH = "px-3 py-2 text-left text-xs font-semibold tracking-wide whitespace-nowrap text-gray-600 uppercase dark:text-gray-300";
-const TD = "px-3 py-2 whitespace-nowrap";
+const TD = `${TD_BASE} whitespace-nowrap`;
 
 function Table({ head, children, footer }: { head: ReactNode; children: ReactNode; footer?: ReactNode }) {
   return (
     <div className="max-h-[420px] overflow-auto rounded-lg border border-gray-200 dark:border-gray-800">
       <table className="w-full text-sm">
-        <thead className="sticky top-0 bg-gray-50 dark:bg-gray-800">
+        <thead className={STICKY_THEAD}>
           <tr>{head}</tr>
         </thead>
         <tbody className="divide-y divide-gray-100 dark:divide-gray-800">{children}</tbody>
@@ -29,17 +29,8 @@ function Table({ head, children, footer }: { head: ReactNode; children: ReactNod
   );
 }
 
-function Empty({ cols, children }: { cols: number; children: ReactNode }) {
-  return (
-    <tr>
-      <td colSpan={cols} className="px-3 py-10 text-center text-gray-500 dark:text-gray-400">
-        {children}
-      </td>
-    </tr>
-  );
-}
-
-/** The jobs behind the month's headline numbers: invoiced, waiting for PO, received. */
+/** The jobs behind the month's headline numbers: invoiced, waiting for PO, received,
+ * closed without invoice. */
 export function MonthDetailCard({ detail, periodLabel, asOfLabel }: { detail: MonthDetail; periodLabel: string; asOfLabel: string }) {
   const [tab, setTab] = useState<Tab>("invoiced");
   const navigate = useNavigate();
@@ -95,7 +86,7 @@ export function MonthDetailCard({ detail, periodLabel, asOfLabel }: { detail: Mo
             )
           }
         >
-          {detail.invoiced.length === 0 && <Empty cols={5}>Nothing invoiced in {periodLabel} yet.</Empty>}
+          {detail.invoiced.length === 0 && <EmptyRow cols={5}>Nothing invoiced in {periodLabel} yet.</EmptyRow>}
           {detail.invoiced.map((r) => (
             <tr key={r.id} {...row(r.id)}>
               <td className={cn(TD, "font-semibold")}>{r.referenceNumber}</td>
@@ -134,7 +125,7 @@ export function MonthDetailCard({ detail, periodLabel, asOfLabel }: { detail: Mo
               )
             }
           >
-            {detail.awaitingPo.length === 0 && <Empty cols={5}>No jobs were waiting for a PO.</Empty>}
+            {detail.awaitingPo.length === 0 && <EmptyRow cols={5}>No jobs were waiting for a PO.</EmptyRow>}
             {detail.awaitingPo.map((r) => (
               <tr key={r.id} {...row(r.id)}>
                 <td className={cn(TD, "font-semibold")}>{r.referenceNumber}</td>
@@ -177,12 +168,12 @@ export function MonthDetailCard({ detail, periodLabel, asOfLabel }: { detail: Mo
             )
           }
         >
-          {detail.received.length === 0 && <Empty cols={6}>No jobs received in {periodLabel}.</Empty>}
+          {detail.received.length === 0 && <EmptyRow cols={6}>No jobs received in {periodLabel}.</EmptyRow>}
           {detail.received.map((r) => (
             <tr key={r.id} {...row(r.id)}>
               <td className={cn(TD, "font-semibold")}>{r.referenceNumber}</td>
               <td className={TD}>{r.customer}</td>
-              <td className={TD}>{r.jobType}</td>
+              <td className={TD}>{JOB_TYPE_LABELS[r.jobType]}</td>
               <td className={TD}>{formatDate(r.jobCreatedDate)}</td>
               <td className={TD}>
                 <Badge tone={r.currentStage === "CLOSED" ? "success" : "neutral"}>{STAGE_LABELS[r.currentStage]}</Badge>
@@ -196,7 +187,7 @@ export function MonthDetailCard({ detail, periodLabel, asOfLabel }: { detail: Mo
       {tab === "closedNoInvoice" && (
         <>
           <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
-            Internal jobs closed in {periodLabel} with no invoice raised, valued at their PO value (or quotation amount).
+            Internal and warranty jobs closed in {periodLabel} with no invoice raised, valued at their PO value (or quotation amount).
           </p>
           <Table
             head={
@@ -220,12 +211,12 @@ export function MonthDetailCard({ detail, periodLabel, asOfLabel }: { detail: Mo
               )
             }
           >
-            {detail.closedNoInvoice.length === 0 && <Empty cols={6}>No jobs were closed without an invoice in {periodLabel}.</Empty>}
+            {detail.closedNoInvoice.length === 0 && <EmptyRow cols={6}>No jobs were closed without an invoice in {periodLabel}.</EmptyRow>}
             {detail.closedNoInvoice.map((r) => (
               <tr key={r.id} {...row(r.id)}>
                 <td className={cn(TD, "font-semibold")}>{r.referenceNumber}</td>
                 <td className={TD}>{r.customer}</td>
-                <td className={TD}>{r.jobType}</td>
+                <td className={TD}>{JOB_TYPE_LABELS[r.jobType]}</td>
                 <td className={TD}>{formatDate(r.closingDate)}</td>
                 <td className={cn(TD, "max-w-xs truncate text-gray-600 dark:text-gray-400")}>{r.comments ?? "—"}</td>
                 <td className={cn(TD, "text-right tabular-nums")}>{formatCurrency(r.value)}</td>

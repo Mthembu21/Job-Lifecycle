@@ -7,7 +7,8 @@ import { isNonInvoicedJobType } from "../../../utils/jobTypes";
 import { JOB_TYPE_LABELS } from "../../../constants";
 import { useStageSubmit } from "../useStageSubmit";
 import { Alert, TextField } from "../../../components/ui";
-import { DelayReasonField, StageFormDialog } from "./StageFormDialog";
+import { FormDialog } from "../../../components/FormDialog";
+import { DelayReasonField, toStagePayload } from "./stageFormFields";
 
 interface FormValues {
   invoiceNumber: string;
@@ -40,17 +41,9 @@ export function InvoiceDialog({ job, onClose }: { job: Job; onClose: () => void 
   });
 
   function onSubmit(values: FormValues) {
-    const payload: Record<string, unknown> = { ...values };
-    if (noInvoice) {
-      delete payload.invoiceNumber;
-      delete payload.invoiceDate;
-      delete payload.invoiceAmount;
-    } else if (payload.invoiceAmount === "") delete payload.invoiceAmount;
-    else payload.invoiceAmount = Number(values.invoiceAmount);
-    for (const key of Object.keys(payload)) {
-      if (payload[key] === "") delete payload[key];
-    }
-    submit(payload);
+    // Internal / warranty jobs send no invoice details — the closing date closes the job.
+    const omit = noInvoice ? ["invoiceNumber", "invoiceDate", "invoiceAmount"] : [];
+    submit(toStagePayload(values, { numbers: ["invoiceAmount"], omit }));
   }
 
   const dispatchNotDone = !job.dispatch?.dispatchDate;
@@ -58,7 +51,7 @@ export function InvoiceDialog({ job, onClose }: { job: Job; onClose: () => void 
   const typeLabel = JOB_TYPE_LABELS[job.jobType];
 
   return (
-    <StageFormDialog
+    <FormDialog
       title={`${noInvoice ? "Close Job" : "Invoicing Stage"} — ${job.referenceNumber}`}
       error={error}
       warning={
@@ -129,6 +122,6 @@ export function InvoiceDialog({ job, onClose }: { job: Job; onClose: () => void 
         requiredText={`Required: ${noInvoice ? "closing" : "invoicing"} has exceeded the 7-day SLA target`}
         optionalText={`Only required if ${noInvoice ? "closing" : "invoicing"} takes longer than 7 days after dispatch`}
       />
-    </StageFormDialog>
+    </FormDialog>
   );
 }

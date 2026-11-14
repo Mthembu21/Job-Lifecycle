@@ -3,7 +3,8 @@ import { Job } from "../../../types";
 import { addBusinessDays, toDateInputValue } from "../../../utils/date";
 import { useStageSubmit } from "../useStageSubmit";
 import { TextField } from "../../../components/ui";
-import { DelayReasonField, StageFormDialog } from "./StageFormDialog";
+import { FormDialog } from "../../../components/FormDialog";
+import { DelayReasonField, toStagePayload } from "./stageFormFields";
 
 interface FormValues {
   plannedDisassemblyDate: string;
@@ -34,17 +35,11 @@ export function QuotationDialog({ job, onClose }: { job: Job; onClose: () => voi
   });
 
   function onSubmit(values: FormValues) {
-    const payload: Record<string, unknown> = { ...values };
-    if (!payload.quotationAmount && payload.quotationAmount !== 0) delete payload.quotationAmount;
-    else payload.quotationAmount = Number(values.quotationAmount);
-    for (const key of Object.keys(payload)) {
-      if (payload[key] === "") delete payload[key];
-    }
-    submit(payload);
+    submit(toStagePayload(values, { numbers: ["quotationAmount"] }));
   }
 
   return (
-    <StageFormDialog
+    <FormDialog
       title={`Quotation Stage — ${job.referenceNumber}`}
       error={error}
       submitting={submitting}
@@ -91,6 +86,6 @@ export function QuotationDialog({ job, onClose }: { job: Job; onClose: () => voi
         requiredText="Required: this quotation has exceeded the 7-day SLA target"
         optionalText="Only required if the quotation SLA has been exceeded"
       />
-    </StageFormDialog>
+    </FormDialog>
   );
 }

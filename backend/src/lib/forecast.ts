@@ -1,6 +1,9 @@
 import { prisma } from "./prisma";
 import { jobAsOf } from "./asOf";
-import { deriveJobStatus, StageName } from "./statusEngine";
+import { DerivedJobStatus, deriveJobStatus } from "./statusEngine";
+import { daysBetween } from "./sla";
+import { JOB_TYPE_LABELS, SlaStage, STAGE_LABELS } from "./labels";
+import { monthKeyOf, monthWindow, nextMonthKey } from "./months";
 import { JobWithListRelations } from "../modules/jobs/jobs.dto";
 
 /*
@@ -15,18 +18,6 @@ import { JobWithListRelations } from "../modules/jobs/jobs.dto";
  * forecast without freezing first, the snapshot taken at the first such moment after the month starts
  * is identical to the forecast at the moment the previous month ended.
  */
-
-export const MONTH_KEY_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
-
-/** "YYYY-MM" in the server's local calendar (same convention as the dashboard). */
-export function monthKeyOf(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-}
-
-export function nextMonthKey(key: string): string {
-  const [y, m] = key.split("-").map(Number);
-  return monthKeyOf(new Date(y, m, 1));
-}
 
 function isUniqueViolation(e: unknown): boolean {
   return typeof e === "object" && e !== null && (e as { code?: string }).code === "P2002";
@@ -46,21 +37,18 @@ async function freezeMonth(month: string, provisional: boolean) {
     where: { forecastMonth: month },
     select: { id: true, referenceNumber: true, customer: true, forecastAmount: true },
   });
-  for (const job of jobs) {
-    try {
-      await prisma.forecastSnapshot.create({
-        data: {
-          month,
-          jobId: job.id,
-          referenceNumber: job.referenceNumber,
-          customer: job.customer,
-          amount: job.forecastAmount ?? 0,
-        },
-      });
-    } catch (e) {
-      if (!isUniqueViolation(e)) throw e;
-    }
-  }
+  if (jobs.length === 0) return;
+  // We hold the month's claim, so any snapshot rows already there are from an interrupted freeze.
+  await prisma.forecastSnapshot.deleteMany({ where: { month } });
+  await prisma.forecastSnapshot.createMany({
+    data: jobs.map((job) => ({
+      month,
+      jobId: job.id,
+      referenceNumber: job.referenceNumber,
+      customer: job.customer,
+      amount: job.forecastAmount ?? 0,
+    })),
+  });
 }
 
 /** Freezes every month that has started but isn't frozen yet. Call before changing any forecast. */
@@ -87,11 +75,14 @@ export type ForecastOutcome =
   | "PENDING" // current month: forecast, not invoiced yet
   | "SLIPPED" // past month: forecast, not invoiced in the month
   | "UNPLANNED" // invoiced in the month without being forecast for it
-  | "CLOSED_NO_INVOICE" // forecast, but closed as an internal job with no invoice
+  | "CLOSED_NO_INVOICE" // forecast, but closed as an internal / warranty job with no invoice
   | "REMOVED"; // forecast, but the job has since been deleted
 
+/** Forecast that didn't turn into an invoice in the month. */
+const NOT_INVOICED_OUTCOMES: ForecastOutcome[] = ["SLIPPED", "PENDING", "CLOSED_NO_INVOICE"];
+
 /** Where a not-yet-invoiced job was stuck at month end — the headline "cause". */
-const STAGE_CAUSE: Record<Exclude<StageName, "CLOSED">, string> = {
+const STAGE_CAUSE: Record<SlaStage, string> = {
   QUOTATION: "Waiting for quotation",
   AWAITING_PO: "Waiting for PO / go-ahead",
   REPAIR: "Repair not complete",
@@ -99,13 +90,8 @@ const STAGE_CAUSE: Record<Exclude<StageName, "CLOSED">, string> = {
   INVOICING: "Invoice not raised",
 };
 
-const STAGE_NAME: Record<Exclude<StageName, "CLOSED">, string> = {
-  QUOTATION: "Quotation",
-  AWAITING_PO: "PO",
-  REPAIR: "Repair",
-  DISPATCH: "Dispatch",
-  INVOICING: "Invoicing",
-};
+/** Stage names as used in "<stage> took N days" ("PO took…" reads better than "Awaiting PO took…"). */
+const STAGE_NAME: Record<SlaStage, string> = { ...STAGE_LABELS, AWAITING_PO: "PO" };
 
 export interface ForecastFactor {
   text: string;
@@ -129,15 +115,12 @@ export interface ForecastRow {
   note: { comment: string; by: string; at: string } | null;
 }
 
-const DAY_MS = 86_400_000;
 const money = (n: number) =>
   `R ${n.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 const fmtDate = (d: Date) => d.toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" });
 
-/** Explains why a job wasn't invoiced, from where it stood at `asOf`. */
-function explain(job: JobWithListRelations, asOf: Date) {
-  const then = jobAsOf(job, asOf);
-  const status = deriveJobStatus(then, asOf);
+/** Explains why a job wasn't invoiced, from where it stood at `asOf` (`then` = the job rewound to it). */
+function explain(job: JobWithListRelations, then: JobWithListRelations, status: DerivedJobStatus, asOf: Date) {
   const factors: ForecastFactor[] = [];
   let cause: string | null = null;
 
@@ -165,7 +148,7 @@ function explain(job: JobWithListRelations, asOf: Date) {
 
   const missingWo = !then.woNumber;
   if (missingWo) {
-    const days = Math.max(0, Math.floor((asOf.getTime() - job.jobCreatedDate.getTime()) / DAY_MS));
+    const days = Math.max(0, daysBetween(job.jobCreatedDate, asOf));
     factors.unshift({ text: `No WO number — ${days} days since job opening`, tone: "warning" });
   }
 
@@ -185,12 +168,7 @@ function explain(job: JobWithListRelations, asOf: Date) {
 
 export async function buildForecastReport(rawJobs: JobWithListRelations[], year: number, month: number, now = new Date()) {
   await ensureForecastsFrozen(now);
-
-  const key = `${year}-${String(month).padStart(2, "0")}`;
-  const start = new Date(year, month - 1, 1);
-  const endOfMonth = new Date(new Date(year, month, 1).getTime() - 1);
-  const isCurrentMonth = endOfMonth.getTime() > now.getTime();
-  const asOf = isCurrentMonth ? now : endOfMonth;
+  const { key, start, isCurrentMonth, asOf, inMonth } = monthWindow(year, month, now);
 
   const [freeze, firstFreeze, snapshots, notes] = await Promise.all([
     prisma.forecastFreeze.findUnique({ where: { month: key } }),
@@ -215,7 +193,6 @@ export async function buildForecastReport(rawJobs: JobWithListRelations[], year:
     for (const s of snapshots) committed.set(s.jobId, { referenceNumber: s.referenceNumber, customer: s.customer, amount: s.amount });
   }
 
-  const inMonth = (d: Date | null | undefined) => !!d && d.getTime() >= start.getTime() && d.getTime() <= asOf.getTime();
   const rows: ForecastRow[] = [];
 
   const noteFor = (jobId: string) => {
@@ -253,19 +230,24 @@ export async function buildForecastReport(rawJobs: JobWithListRelations[], year:
         ...base, outcome: "INVOICED_EARLY", invoicedAmount, invoiceDate: invoiceDate.toISOString(), cause: "Invoiced early",
         missingWo: false, factors: [{ text: `Invoiced early, on ${fmtDate(invoiceDate)}`, tone: "info" }],
       });
-    } else if (job.invoice?.closedWithoutInvoice && job.invoice.closingDate && job.invoice.closingDate.getTime() <= asOf.getTime()) {
-      // Forecast to invoice, but it turned out to be an internal job closed with no invoice.
-      rows.push({
-        ...base, outcome: "CLOSED_NO_INVOICE", invoicedAmount: null, invoiceDate: null, cause: "Closed without invoice (internal)",
-        missingWo: false, factors: [{ text: `Closed without invoice on ${fmtDate(job.invoice.closingDate)} — internal job`, tone: "warning" }],
-      });
     } else {
-      const why = explain(job, asOf);
-      if (invoiceDate) why.factors.unshift({ text: `Invoiced later, on ${fmtDate(invoiceDate)}`, tone: "info" });
-      rows.push({
-        ...base, outcome: isCurrentMonth ? "PENDING" : "SLIPPED", invoicedAmount: null, invoiceDate: null,
-        cause: why.cause, missingWo: why.missingWo, factors: why.factors,
-      });
+      const then = jobAsOf(job, asOf);
+      const status = deriveJobStatus(then, asOf);
+      if (status.closedWithoutInvoice) {
+        // Forecast to invoice, but closed as an internal / warranty job with no invoice.
+        const type = JOB_TYPE_LABELS[job.jobType].toLowerCase();
+        rows.push({
+          ...base, outcome: "CLOSED_NO_INVOICE", invoicedAmount: null, invoiceDate: null, cause: "Closed without invoice (internal)",
+          missingWo: false, factors: [{ text: `Closed without invoice on ${fmtDate(status.closedOn!)} — ${type} job`, tone: "warning" }],
+        });
+      } else {
+        const why = explain(job, then, status, asOf);
+        if (invoiceDate) why.factors.unshift({ text: `Invoiced later, on ${fmtDate(invoiceDate)}`, tone: "info" });
+        rows.push({
+          ...base, outcome: isCurrentMonth ? "PENDING" : "SLIPPED", invoicedAmount: null, invoiceDate: null,
+          cause: why.cause, missingWo: why.missingWo, factors: why.factors,
+        });
+      }
     }
   }
 
@@ -286,9 +268,12 @@ export async function buildForecastReport(rawJobs: JobWithListRelations[], year:
   rows.sort((a, b) => ORDER[a.outcome] - ORDER[b.outcome] || (b.forecastAmount ?? b.invoicedAmount ?? 0) - (a.forecastAmount ?? a.invoicedAmount ?? 0));
 
   const sum = (xs: Array<number | null>) => xs.reduce<number>((s, x) => s + (x ?? 0), 0);
+  const withOutcome = (...outcomes: ForecastOutcome[]) => rows.filter((r) => outcomes.includes(r.outcome));
   const forecastRows = rows.filter((r) => r.outcome !== "UNPLANNED");
-  const notInvoiced = rows.filter((r) => r.outcome === "SLIPPED" || r.outcome === "PENDING" || r.outcome === "CLOSED_NO_INVOICE");
-  const invoicedRows = rows.filter((r) => r.outcome === "INVOICED" || r.outcome === "UNPLANNED");
+  const notInvoiced = withOutcome(...NOT_INVOICED_OUTCOMES);
+  const delivered = withOutcome("INVOICED");
+  const unplanned = withOutcome("UNPLANNED");
+  const invoicedRows = [...delivered, ...unplanned];
 
   // Where the not-invoiced money was stuck.
   const causeMap = new Map<string, { cause: string; count: number; amount: number }>();
@@ -316,8 +301,8 @@ export async function buildForecastReport(rawJobs: JobWithListRelations[], year:
       invoicedTotal,
       invoicedCount: invoicedRows.length,
       achievedPercent: forecastTotal > 0 ? Math.round((invoicedTotal / forecastTotal) * 100) : null,
-      deliveredTotal: sum(rows.filter((r) => r.outcome === "INVOICED").map((r) => r.invoicedAmount)),
-      deliveredCount: rows.filter((r) => r.outcome === "INVOICED").length,
+      deliveredTotal: sum(delivered.map((r) => r.invoicedAmount)),
+      deliveredCount: delivered.length,
       /** Forecast amount of the individual forecast jobs that haven't been invoiced (job-level view). */
       notInvoicedTotal: sum(notInvoiced.map((r) => r.forecastAmount)),
       notInvoicedCount: notInvoiced.length,
@@ -325,8 +310,8 @@ export async function buildForecastReport(rawJobs: JobWithListRelations[], year:
       remainingTotal: Math.max(0, forecastTotal - invoicedTotal),
       /** Invoiced beyond the forecast (0 unless the forecast was exceeded). */
       aboveForecastTotal: Math.max(0, invoicedTotal - forecastTotal),
-      unplannedTotal: sum(rows.filter((r) => r.outcome === "UNPLANNED").map((r) => r.invoicedAmount)),
-      unplannedCount: rows.filter((r) => r.outcome === "UNPLANNED").length,
+      unplannedTotal: sum(unplanned.map((r) => r.invoicedAmount)),
+      unplannedCount: unplanned.length,
       /** Live forecast for this month right now (what planners currently expect). */
       latestForecastTotal: sum(rawJobs.filter((j) => j.forecastMonth === key).map((j) => j.forecastAmount)),
     },
@@ -335,5 +320,3 @@ export async function buildForecastReport(rawJobs: JobWithListRelations[], year:
     rows,
   };
 }
-
-export type ForecastReport = Awaited<ReturnType<typeof buildForecastReport>>;
