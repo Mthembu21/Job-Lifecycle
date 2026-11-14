@@ -80,6 +80,8 @@ export function ForecastSection({ report }: { report: ForecastReport }) {
         <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
           Measured against the forecast as it stood when the previous month ended
           {report.isCurrentMonth ? " — invoices are counted up to today." : "."}
+          {s.backdatedCount > 0 &&
+            ` Includes ${formatCurrency(s.backdatedTotal)} (${plural(s.backdatedCount, "job")}) backdated after the month ended.`}
         </p>
       )}
 
@@ -204,7 +206,10 @@ function ForecastTableRow({ row, month }: { row: ForecastRow; month: string }) {
         <p className="text-xs text-gray-500 dark:text-gray-400">{row.customer}</p>
       </td>
       <td className={TD}>
-        <Badge tone={outcome.tone}>{outcome.label}</Badge>
+        <div className="flex flex-wrap gap-1">
+          <Badge tone={outcome.tone}>{outcome.label}</Badge>
+          {row.backdated && <Badge tone="outline">Backdated</Badge>}
+        </div>
         {moved && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Moved to {monthLabel(row.currentForecastMonth!)}</p>}
       </td>
       <td className={cn(TD, "text-right whitespace-nowrap tabular-nums")}>

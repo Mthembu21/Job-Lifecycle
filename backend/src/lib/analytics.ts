@@ -1,5 +1,4 @@
 import { JobDto } from "../modules/jobs/jobs.dto";
-import { isNonInvoicedJobType } from "./jobTypes";
 import { JOB_TYPE_LABELS, SLA_STAGES, STAGE_LABELS, STAGE_ORDER, jobValue, toNumber } from "./labels";
 import { monthKeyOf } from "./months";
 
@@ -104,7 +103,6 @@ export function buildDashboardSummary(jobs: JobDto[], opts: SummaryOptions = {})
   const anchor = opts.anchor ?? new Date();
   const openJobs = jobs.filter((j) => !j.status.isClosed);
   const closedJobs = jobs.filter((j) => j.status.isClosed);
-  const openNonInvoiced = openJobs.filter((j) => isNonInvoicedJobType(j.jobType));
   const atStage = (stage: string) => jobs.filter((j) => j.status.currentStage === stage).length;
   const sumOf = (xs: JobDto[], valueOf: (j: JobDto) => number) => xs.reduce((sum, j) => sum + valueOf(j), 0);
 
@@ -122,9 +120,6 @@ export function buildDashboardSummary(jobs: JobDto[], opts: SummaryOptions = {})
     jobsInvoiced: jobs.filter((j) => j.invoice?.invoiceDate).length,
     // Internal / warranty jobs closed with no invoice — valued at PO value, else quotation amount.
     ...closedWithoutInvoiceKpis(closedJobs.filter((j) => j.status.closedWithoutInvoice)),
-    // Open internal / warranty work (part of the open job value, but never invoiced).
-    openNonInvoicedCount: openNonInvoiced.length,
-    openNonInvoicedValue: sumOf(openNonInvoiced, (j) => toNumber(j.poValue)),
     delayedJobs: jobs.filter((j) => j.status.currentStatus === "DELAYED").length,
     totalOpenJobValue,
     totalInvoicedValue,

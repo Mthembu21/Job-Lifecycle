@@ -8,8 +8,8 @@ import { hasRole, requireRole } from "../../middleware/rbac";
 import { writeAuditLog, diffSummary } from "../../lib/audit";
 import { jobListInclude, toJobDto } from "./jobs.dto";
 import { ensureForecastsFrozen } from "../../lib/forecast";
-import { MONTH_KEY_RE } from "../../lib/months";
-import { isNonInvoicedJobType } from "../../lib/jobTypes";
+import { MONTH_KEY_RE, monthKeyOf } from "../../lib/months";
+import { hasPurchaseOrder, isNonInvoicedJobType } from "../../lib/jobTypes";
 
 const router = Router();
 
@@ -146,7 +146,7 @@ router.patch(
   authenticate,
   requireRole("STOREMAN", "PLANNER"),
   asyncHandler(async (req, res) => {
-    const job = await prisma.job.findUnique({ where: { id: req.params.id }, include: { invoice: true } });
+    const job = await prisma.job.findUnique({ where: { id: req.params.id }, include: { invoice: true, repair: true } });
     if (!job) throw new HttpError(404, "Job not found");
 
     const data = updateJobSchema.parse(req.body);
@@ -171,6 +171,12 @@ router.patch(
       }
       if (data.forecastMonth && isNonInvoicedJobType(data.jobType ?? job.jobType)) {
         throw new HttpError(400, "Internal and warranty jobs aren't invoiced, so they can't be forecast");
+      }
+      if (data.forecastMonth && !hasPurchaseOrder({ poNumber: data.poNumber ?? job.poNumber, repair: job.repair })) {
+        throw new HttpError(400, "Only jobs with a PO can be forecast — record the PO first");
+      }
+      if (data.forecastMonth && data.forecastMonth < monthKeyOf(new Date())) {
+        throw new HttpError(400, "That month has ended — backdate it from the Forecast page instead");
       }
     }
     // Freeze any month that has started before its forecast can change (see lib/forecast.ts).

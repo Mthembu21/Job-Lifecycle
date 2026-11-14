@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Job, JobType, StageName } from "../types";
+import { JobType, StageName } from "../types";
 import { apiClient } from "./client";
 
 export interface ChartBucket {
@@ -31,9 +31,6 @@ export interface DashboardSummary {
     closedInternalValue: number;
     closedWarrantyCount: number;
     closedWarrantyValue: number;
-    /** Open internal / warranty jobs — part of the open job value but never invoiced. */
-    openNonInvoicedCount: number;
-    openNonInvoicedValue: number;
     delayedJobs: number;
     totalOpenJobValue: number;
     totalInvoicedValue: number;
@@ -138,6 +135,8 @@ export interface ForecastRow {
   missingWo: boolean;
   factors: ForecastFactor[];
   note: { comment: string; by: string; at: string } | null;
+  /** Added to the month's forecast after the month ended. */
+  backdated: boolean;
 }
 
 export interface ForecastReport {
@@ -166,6 +165,9 @@ export interface ForecastReport {
     unplannedTotal: number;
     unplannedCount: number;
     latestForecastTotal: number;
+    /** Part of the forecast added after the month ended. */
+    backdatedTotal: number;
+    backdatedCount: number;
   };
   causes: { cause: string; count: number; amount: number }[];
   noWo: { count: number; amount: number };
@@ -221,6 +223,28 @@ export interface ForecastMonthStatus {
   provisional: boolean;
   /** When the month's forecast locks (the moment the previous month ends). */
   locksAt: string;
+  /** The month has ended but can still be backdated (previous month only). */
+  backdating: boolean;
+}
+
+/** A committed (locked or backdated) forecast entry of a past month. */
+export interface CommittedForecastEntry {
+  jobId: string;
+  amount: number;
+  /** false = locked when the month ended (can't be changed). */
+  backdated: boolean;
+}
+
+/** The previous month's committed forecast, for backdating on the Forecast page. */
+export function useCommittedForecast(month: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["forecast", "committed", month],
+    queryFn: async () => {
+      const { data } = await apiClient.get<CommittedForecastEntry[]>(`/forecast/${month}/committed`);
+      return data;
+    },
+    enabled,
+  });
 }
 
 export function useForecastMonthStatus(month: string) {
@@ -233,14 +257,11 @@ export function useForecastMonthStatus(month: string) {
   });
 }
 
-type AssignForecastInput = { set?: { jobId: string; amount: number }[]; clear?: string[] };
-
-/** The Forecast page's job list (all jobs, no filters). */
-const FORECAST_JOBS_KEY = ["jobs", {}];
+export type AssignForecastInput = { set?: { jobId: string; amount: number }[]; clear?: string[] };
 
 /**
- * The Forecast page's tick boxes: add jobs to / remove jobs from a month's forecast. The job list
- * is updated in place straight away, rather than refetching every job after each tick.
+ * Saves the Forecast page's selection for a month: `set` jobs (with amounts) are added or updated,
+ * `clear` jobs taken out. For the previous month the server applies it as backdating.
  */
 export function useAssignForecast(month: string) {
   const queryClient = useQueryClient();
@@ -249,28 +270,13 @@ export function useAssignForecast(month: string) {
       const { data } = await apiClient.put<{ updated: number }>(`/forecast/${month}/jobs`, input);
       return data;
     },
-    onMutate: async ({ set = [], clear = [] }) => {
-      await queryClient.cancelQueries({ queryKey: FORECAST_JOBS_KEY, exact: true });
-      const previous = queryClient.getQueryData<Job[]>(FORECAST_JOBS_KEY);
-      const amounts = new Map(set.map((s) => [s.jobId, s.amount]));
-      queryClient.setQueryData<Job[]>(FORECAST_JOBS_KEY, (jobs) =>
-        jobs?.map((job) => {
-          if (amounts.has(job.id)) return { ...job, forecastMonth: month, forecastAmount: amounts.get(job.id)! };
-          if (clear.includes(job.id) && job.forecastMonth === month) return { ...job, forecastMonth: null, forecastAmount: null };
-          return job;
-        })
-      );
-      return { previous };
-    },
-    onError: (_err, _input, context) => {
-      if (context?.previous) queryClient.setQueryData(FORECAST_JOBS_KEY, context.previous);
-      queryClient.invalidateQueries({ queryKey: FORECAST_JOBS_KEY, exact: true });
-    },
-    onSettled: () => {
-      // Other job views pick the change up next time they're shown.
-      queryClient.invalidateQueries({ queryKey: ["jobs"], refetchType: "none" });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      queryClient.invalidateQueries({ queryKey: ["forecast"] });
-    },
+    // Returning the refetches makes the save "finish" only once the page shows the saved data,
+    // so the unsaved marks can be cleared without the ticks flickering back.
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["jobs"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+        queryClient.invalidateQueries({ queryKey: ["forecast"] }),
+      ]),
   });
 }
