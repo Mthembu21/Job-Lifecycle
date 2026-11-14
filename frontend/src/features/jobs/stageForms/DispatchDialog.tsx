@@ -5,6 +5,7 @@ import { toDateInputValue } from "../../../utils/date";
 import { useStageSubmit } from "../useStageSubmit";
 
 interface FormValues {
+  dispatchRequestDate: string;
   dispatchDate: string;
   courier: string;
   trackingNumber: string;
@@ -17,6 +18,7 @@ export function DispatchDialog({ job, onClose }: { job: Job; onClose: () => void
 
   const { control, handleSubmit } = useForm<FormValues>({
     defaultValues: {
+      dispatchRequestDate: toDateInputValue(job.dispatch?.dispatchRequestDate),
       dispatchDate: toDateInputValue(job.dispatch?.dispatchDate),
       courier: job.dispatch?.courier ?? "",
       trackingNumber: job.dispatch?.trackingNumber ?? "",
@@ -52,10 +54,25 @@ export function DispatchDialog({ job, onClose }: { job: Job; onClose: () => void
           )}
           <Grid item xs={12} sm={6}>
             <Controller
+              name="dispatchRequestDate"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  type="date"
+                  label="Dispatch Request Date"
+                  fullWidth
+                  InputLabelProps={{ shrink: true }}
+                />
+              )}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6}>
+            <Controller
               name="dispatchDate"
               control={control}
               render={({ field }) => (
-                <TextField {...field} type="date" label="Dispatch Date" fullWidth InputLabelProps={{ shrink: true }} />
+                <TextField {...field} type="date" label="Actual Dispatch Date" fullWidth InputLabelProps={{ shrink: true }} />
               )}
             />
           </Grid>

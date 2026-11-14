@@ -48,6 +48,7 @@ export function DashboardPage() {
   const { kpis, charts } = data;
 
   const jobsTrend = jobsPeriod === "month" ? charts.jobsCreatedByMonth : charts.jobsCreatedByWeek;
+  const jobsInvoicedTrend = jobsPeriod === "month" ? charts.jobsInvoicedByMonth : charts.jobsInvoicedByWeek;
   const invoiceTrend = financePeriod === "month" ? charts.invoiceValueByMonth : charts.invoiceValueByWeek;
   const jobValueTrend = financePeriod === "month" ? charts.jobValueByMonth : charts.jobValueByWeek;
 
@@ -114,7 +115,7 @@ export function DashboardPage() {
       </Typography>
       <Grid container spacing={2} sx={{ mb: 3 }}>
         <Grid item xs={12} md={6}>
-          <ChartCard title="Jobs Created">
+          <ChartCard title="Jobs Created vs Invoiced">
             <Stack direction="row" justifyContent="flex-end" sx={{ mb: 1 }}>
               <ToggleButtonGroup
                 size="small"
@@ -128,7 +129,10 @@ export function DashboardPage() {
             </Stack>
             <TrendLineChart
               categories={jobsTrend.map((b) => b.label)}
-              series={[{ label: "Jobs Created", data: jobsTrend.map((b) => b.value), color: categorical[0] }]}
+              series={[
+                { label: "Jobs Created", data: jobsTrend.map((b) => b.value), color: categorical[0] },
+                { label: "Jobs Invoiced", data: jobsInvoicedTrend.map((b) => b.value), color: categorical[1] },
+              ]}
             />
           </ChartCard>
         </Grid>

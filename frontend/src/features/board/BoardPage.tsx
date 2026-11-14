@@ -1,27 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { Box, Fade, Stack, ThemeProvider, Typography, createTheme } from "@mui/material";
 import { BoardJob, useBoardJobs } from "../../api/board";
 import { BoardJobCard } from "./BoardJobCard";
 import { STAGE_LABELS } from "../../constants";
 import { StageName } from "../../types";
-import { EPIROC_BLACK, EPIROC_YELLOW } from "../../theme/epirocBrand";
 
 const COLUMNS: StageName[] = ["QUOTATION", "AWAITING_PO", "REPAIR", "DISPATCH", "INVOICING", "CLOSED"];
 
 // Seconds each stage stays full-screen before rotating to the next one.
 const STAGE_DURATION_MS = 10_000;
-
-// This screen stays up on a meeting-room TV regardless of anyone's personal
-// light/dark preference, so it carries its own fixed dark theme instead of
-// reading the shared ThemeModeContext.
-const boardTheme = createTheme({
-  palette: {
-    mode: "dark",
-    primary: { main: EPIROC_YELLOW, contrastText: EPIROC_BLACK },
-    background: { default: "#0B0E11", paper: "#15191D" },
-  },
-  shape: { borderRadius: 10 },
-});
 
 function useClock() {
   const [now, setNow] = useState(() => new Date());
@@ -67,110 +53,68 @@ export function BoardPage() {
   const currentJobs = currentStage ? byStage.get(currentStage) ?? [] : [];
 
   return (
-    <ThemeProvider theme={boardTheme}>
-      <Box
-        sx={{
-          height: "100vh",
-          bgcolor: "background.default",
-          color: "text.primary",
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-        }}
-      >
-        <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ px: 3, pt: 2.5, pb: 1.5 }}>
-          <Typography variant="h6" fontWeight={700} sx={{ opacity: 0.85 }}>
-            Job Lifecycle Board
-          </Typography>
-          <Stack direction="row" spacing={3} alignItems="baseline">
-            <Typography variant="body2" sx={{ opacity: 0.5 }}>
-              Updated {dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : "—"}
-            </Typography>
-            <Typography variant="h6" fontFamily="monospace" sx={{ opacity: 0.85 }}>
-              {now.toLocaleTimeString()}
-            </Typography>
-          </Stack>
-        </Stack>
+    <div className="flex h-screen flex-col overflow-hidden bg-board-bg text-white">
+      <div className="flex items-baseline justify-between px-6 pt-5 pb-3">
+        <h1 className="text-lg font-bold text-white/85">Job Lifecycle Board</h1>
+        <div className="flex items-baseline gap-6">
+          <span className="text-sm text-white/50">
+            Updated {dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : "—"}
+          </span>
+          <span className="font-mono text-lg text-white/85">{now.toLocaleTimeString()}</span>
+        </div>
+      </div>
 
-        {!isLoading && activeStages.length > 1 && (
-          <Box sx={{ height: 3, bgcolor: "rgba(255,255,255,0.06)", position: "relative", overflow: "hidden" }}>
-            <Box
-              key={currentStage}
-              sx={{
-                position: "absolute",
-                inset: 0,
-                bgcolor: EPIROC_YELLOW,
-                transformOrigin: "left",
-                "@keyframes board-progress": {
-                  from: { transform: "scaleX(1)" },
-                  to: { transform: "scaleX(0)" },
-                },
-                animation: `board-progress ${STAGE_DURATION_MS}ms linear forwards`,
-              }}
-            />
-          </Box>
+      {!isLoading && activeStages.length > 1 && (
+        <div className="relative h-[3px] overflow-hidden bg-white/5">
+          {/* Duration comes from a JS constant, so this one has to be an
+              inline style — Tailwind can only scan static literal classes. */}
+          <div
+            key={currentStage}
+            className="absolute inset-0 origin-left bg-epiroc-yellow"
+            style={{ animation: `board-progress ${STAGE_DURATION_MS}ms linear forwards` }}
+          />
+        </div>
+      )}
+
+      <div className="flex gap-3 px-6 py-4">
+        {COLUMNS.map((stage) => {
+          const count = byStage.get(stage)?.length ?? 0;
+          const isActive = stage === currentStage;
+          return (
+            <div
+              key={stage}
+              className={`flex-1 rounded-lg py-2 text-center transition-colors duration-500 ${
+                isActive ? "bg-epiroc-yellow text-epiroc-black" : "bg-board-panel text-white"
+              } ${count === 0 ? "opacity-40" : "opacity-100"}`}
+            >
+              <p className="text-sm font-bold">{STAGE_LABELS[stage]}</p>
+              <p className="text-xs opacity-80">
+                {count} job{count === 1 ? "" : "s"}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="min-h-0 flex-1 px-6 pb-6">
+        {isLoading ? (
+          <p className="mt-16 text-center text-xl text-white/50">Loading…</p>
+        ) : (
+          <div
+            key={currentStage ?? "empty"}
+            className="flex h-full min-h-0 flex-col animate-[board-fade-in_0.6s_ease]"
+          >
+            <h2 className="mb-4 shrink-0 text-4xl font-extrabold text-epiroc-yellow">
+              {currentStage ? STAGE_LABELS[currentStage] : "No open jobs"}
+            </h2>
+            <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4 overflow-y-auto">
+              {currentJobs.map((job) => (
+                <BoardJobCard key={job.id} job={job} />
+              ))}
+            </div>
+          </div>
         )}
-
-        <Stack direction="row" spacing={1.5} sx={{ px: 3, py: 2, flexShrink: 0 }}>
-          {COLUMNS.map((stage) => {
-            const count = byStage.get(stage)?.length ?? 0;
-            const isActive = stage === currentStage;
-            return (
-              <Box
-                key={stage}
-                sx={{
-                  flex: 1,
-                  textAlign: "center",
-                  py: 1,
-                  borderRadius: 2,
-                  bgcolor: isActive ? "primary.main" : "background.paper",
-                  color: isActive ? EPIROC_BLACK : "text.primary",
-                  opacity: count === 0 ? 0.4 : 1,
-                  transition: "background-color 0.5s ease, color 0.5s ease, opacity 0.5s ease",
-                }}
-              >
-                <Typography variant="subtitle2" fontWeight={700}>
-                  {STAGE_LABELS[stage]}
-                </Typography>
-                <Typography variant="caption" sx={{ opacity: 0.8 }}>
-                  {count} job{count === 1 ? "" : "s"}
-                </Typography>
-              </Box>
-            );
-          })}
-        </Stack>
-
-        <Box sx={{ flex: 1, minHeight: 0, px: 3, pb: 3 }}>
-          {isLoading ? (
-            <Typography variant="h5" sx={{ opacity: 0.5, textAlign: "center", mt: 8 }}>
-              Loading…
-            </Typography>
-          ) : (
-            <Fade in key={currentStage ?? "empty"} timeout={600}>
-              <Box sx={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
-                <Typography variant="h3" fontWeight={800} sx={{ mb: 2, color: EPIROC_YELLOW, flexShrink: 0 }}>
-                  {currentStage ? STAGE_LABELS[currentStage] : "No open jobs"}
-                </Typography>
-                <Box
-                  sx={{
-                    flex: 1,
-                    minHeight: 0,
-                    overflowY: "auto",
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-                    gap: 2,
-                    alignContent: "start",
-                  }}
-                >
-                  {currentJobs.map((job) => (
-                    <BoardJobCard key={job.id} job={job} />
-                  ))}
-                </Box>
-              </Box>
-            </Fade>
-          )}
-        </Box>
-      </Box>
-    </ThemeProvider>
+      </div>
+    </div>
   );
 }

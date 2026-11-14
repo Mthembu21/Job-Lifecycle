@@ -15,6 +15,7 @@ import {
 } from "@mui/material";
 import WorkOutlineIcon from "@mui/icons-material/WorkOutline";
 import DashboardIcon from "@mui/icons-material/Dashboard";
+import ImportExportIcon from "@mui/icons-material/ImportExport";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import DarkModeIcon from "@mui/icons-material/DarkMode";
 import LightModeIcon from "@mui/icons-material/LightMode";
@@ -115,6 +116,22 @@ export function AppShell({ children }: { children: ReactNode }) {
             </ListItemIcon>
             <ListItemText primary="Jobs" />
           </ListItemButton>
+          {user?.role !== "SUPERVISOR" && (
+            <ListItemButton
+              component={NavLink}
+              to="/admin/data"
+              sx={{
+                borderRadius: 1,
+                borderLeft: "3px solid transparent",
+                "&.active": { bgcolor: "action.selected", borderColor: EPIROC_YELLOW },
+              }}
+            >
+              <ListItemIcon>
+                <ImportExportIcon />
+              </ListItemIcon>
+              <ListItemText primary="Import / Export" />
+            </ListItemButton>
+          )}
           <ListItemButton
             component="a"
             href="/board"

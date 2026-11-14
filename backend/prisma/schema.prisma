@@ -52,6 +52,11 @@ model Job {
   customer        String
   serialNumber    String
   partNumber      String?
+  machineNumber       String?
+  machineSerialNumber String?
+  customerRef         String?
+  customerAccount     String?
+  dateReceived        DateTime?
   woNumber        String?
   woNumberSetAt   DateTime?
   poNumber        String?
@@ -60,6 +65,9 @@ model Job {
   priority        Priority
   jobCreatedDate  DateTime
   comments        String?
+
+  isLegacyImport Boolean @default(false)
+  legacySheetRow Json?
 
   createdById String @db.ObjectId
   createdBy   User   @relation("JobCreatedBy", fields: [createdById], references: [id])
@@ -79,6 +87,7 @@ model Quotation {
   jobId               String    @unique @db.ObjectId
   job                 Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
   evaluationDate       DateTime?
+  plannedDisassemblyDate DateTime?
   epirocQuotationDate DateTime?
   mcoNumber           String?
   quotationAmount     Float?
@@ -96,8 +105,15 @@ model Repair {
   job                  Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
   purchaseOrderNumber  String?
   purchaseOrderDate    DateTime?
+  plannedAssemblyDate  DateTime?
+  actualAssemblyDate   DateTime?
   repairStartDate      DateTime?
   repairCompletionDate DateTime?
+  outworkRequired      String?
+  supplierName         String?
+  outworkDateSent      DateTime?
+  outworkDateReceived  DateTime?
+  waitingForGoAhead    Boolean?
   technicianName       String?
   labourHours          Float?
   partsCost            Float?
@@ -112,6 +128,7 @@ model Dispatch {
   id             String    @id @default(auto()) @map("_id") @db.ObjectId
   jobId          String    @unique @db.ObjectId
   job            Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  dispatchRequestDate DateTime?
   dispatchDate   DateTime?
   courier        String?
   trackingNumber String?
@@ -130,6 +147,7 @@ model Invoice {
   invoiceNumber  String?
   invoiceDate    DateTime?
   invoiceAmount  Float?
+  plannedClosingDate DateTime?
   closingDate    DateTime?
   comments       String?
   delayReason    String?

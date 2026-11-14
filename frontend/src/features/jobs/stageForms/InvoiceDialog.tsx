@@ -8,6 +8,7 @@ interface FormValues {
   invoiceNumber: string;
   invoiceDate: string;
   invoiceAmount: number | "";
+  plannedClosingDate: string;
   closingDate: string;
   comments: string;
   delayReason: string;
@@ -21,6 +22,7 @@ export function InvoiceDialog({ job, onClose }: { job: Job; onClose: () => void 
       invoiceNumber: job.invoice?.invoiceNumber ?? "",
       invoiceDate: toDateInputValue(job.invoice?.invoiceDate),
       invoiceAmount: job.invoice?.invoiceAmount ? Number(job.invoice.invoiceAmount) : "",
+      plannedClosingDate: toDateInputValue(job.invoice?.plannedClosingDate),
       closingDate: toDateInputValue(job.invoice?.closingDate),
       comments: job.invoice?.comments ?? "",
       delayReason: job.invoice?.delayReason ?? "",
@@ -79,13 +81,22 @@ export function InvoiceDialog({ job, onClose }: { job: Job; onClose: () => void 
           </Grid>
           <Grid item xs={12} sm={6}>
             <Controller
+              name="plannedClosingDate"
+              control={control}
+              render={({ field }) => (
+                <TextField {...field} type="date" label="Planned Job Closing" fullWidth InputLabelProps={{ shrink: true }} />
+              )}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6}>
+            <Controller
               name="closingDate"
               control={control}
               render={({ field }) => (
                 <TextField
                   {...field}
                   type="date"
-                  label="Closing Date"
+                  label="Actual Job Closing"
                   fullWidth
                   InputLabelProps={{ shrink: true }}
                   helperText="Defaults to the invoice date if left blank"
@@ -97,7 +108,7 @@ export function InvoiceDialog({ job, onClose }: { job: Job; onClose: () => void 
             <Controller
               name="comments"
               control={control}
-              render={({ field }) => <TextField {...field} label="Comments" fullWidth multiline minRows={2} />}
+              render={({ field }) => <TextField {...field} label="Remark(s)" fullWidth multiline minRows={2} />}
             />
           </Grid>
           <Grid item xs={12}>

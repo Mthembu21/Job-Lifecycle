@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Controller, useForm } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import {
   Alert,
   Box,
@@ -15,6 +15,7 @@ import {
 } from "@mui/material";
 import { useCreateJob, CreateJobInput } from "../../api/jobs";
 import { JOB_TYPE_LABELS, PRIORITY_LABELS } from "../../constants";
+import { addBusinessDays } from "../../utils/date";
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
@@ -23,9 +24,12 @@ export function JobCreateForm() {
   const createJob = useCreateJob();
   const [serverError, setServerError] = useState<string | null>(null);
 
+  const [jobCreatedDateTouched, setJobCreatedDateTouched] = useState(false);
+
   const {
     control,
     handleSubmit,
+    setValue,
     formState: { errors },
   } = useForm<CreateJobInput>({
     defaultValues: {
@@ -34,6 +38,11 @@ export function JobCreateForm() {
       customer: "",
       serialNumber: "",
       partNumber: "",
+      machineNumber: "",
+      machineSerialNumber: "",
+      customerRef: "",
+      customerAccount: "",
+      dateReceived: "",
       woNumber: "",
       jobType: "CUSTOMER_REPAIR",
       poValue: 0,
@@ -44,6 +53,15 @@ export function JobCreateForm() {
     },
   });
 
+  const dateReceivedValue = useWatch({ control, name: "dateReceived" });
+
+  // Open Date defaults to 3 business days after the Receiving Date, until the
+  // user directly edits the Job Opening field.
+  useEffect(() => {
+    if (jobCreatedDateTouched || !dateReceivedValue) return;
+    setValue("jobCreatedDate", addBusinessDays(dateReceivedValue, 3));
+  }, [dateReceivedValue, jobCreatedDateTouched, setValue]);
+
   async function onSubmit(values: CreateJobInput) {
     setServerError(null);
     try {
@@ -53,6 +71,11 @@ export function JobCreateForm() {
         woNumber: values.woNumber?.trim() || undefined,
         poNumber: values.poNumber?.trim() || undefined,
         partNumber: values.partNumber?.trim() || undefined,
+        machineNumber: values.machineNumber?.trim() || undefined,
+        machineSerialNumber: values.machineSerialNumber?.trim() || undefined,
+        customerRef: values.customerRef?.trim() || undefined,
+        customerAccount: values.customerAccount?.trim() || undefined,
+        dateReceived: values.dateReceived?.trim() || undefined,
       });
       navigate(`/jobs/${job.id}`);
     } catch (err: any) {
@@ -78,7 +101,7 @@ export function JobCreateForm() {
                   render={({ field }) => (
                     <TextField
                       {...field}
-                      label="Reference Number"
+                      label="Reference/Div"
                       fullWidth
                       required
                       error={!!errors.referenceNumber}
@@ -112,7 +135,7 @@ export function JobCreateForm() {
                   render={({ field }) => (
                     <TextField
                       {...field}
-                      label="Job Description"
+                      label="Description"
                       fullWidth
                       multiline
                       minRows={2}
@@ -131,7 +154,7 @@ export function JobCreateForm() {
                   render={({ field }) => (
                     <TextField
                       {...field}
-                      label="Serial Number"
+                      label="Serial Nr"
                       fullWidth
                       required
                       error={!!errors.serialNumber}
@@ -144,7 +167,44 @@ export function JobCreateForm() {
                 <Controller
                   name="partNumber"
                   control={control}
-                  render={({ field }) => <TextField {...field} label="Part Number" fullWidth />}
+                  render={({ field }) => <TextField {...field} label="Part Nr" fullWidth />}
+                />
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <Controller
+                  name="machineNumber"
+                  control={control}
+                  render={({ field }) => <TextField {...field} label="Machine Nr" fullWidth />}
+                />
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <Controller
+                  name="machineSerialNumber"
+                  control={control}
+                  render={({ field }) => <TextField {...field} label="Machine Serial Nr" fullWidth />}
+                />
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <Controller
+                  name="customerRef"
+                  control={control}
+                  render={({ field }) => <TextField {...field} label="Customer Ref" fullWidth />}
+                />
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <Controller
+                  name="customerAccount"
+                  control={control}
+                  render={({ field }) => <TextField {...field} label="Customer Acc" fullWidth />}
+                />
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <Controller
+                  name="dateReceived"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField {...field} type="date" label="Date Received" fullWidth InputLabelProps={{ shrink: true }} />
+                  )}
                 />
               </Grid>
               <Grid item xs={12} sm={4}>
@@ -166,7 +226,7 @@ export function JobCreateForm() {
                   name="jobType"
                   control={control}
                   render={({ field }) => (
-                    <TextField {...field} select label="Job Type" fullWidth>
+                    <TextField {...field} select label="Service Type" fullWidth>
                       {Object.entries(JOB_TYPE_LABELS).map(([value, label]) => (
                         <MenuItem key={value} value={value}>
                           {label}
@@ -197,7 +257,7 @@ export function JobCreateForm() {
                   control={control}
                   rules={{ required: true, min: 0 }}
                   render={({ field }) => (
-                    <TextField {...field} type="number" label="PO Value (Job Value)" fullWidth required />
+                    <TextField {...field} type="number" label="Order Value" fullWidth required />
                   )}
                 />
               </Grid>
@@ -223,11 +283,16 @@ export function JobCreateForm() {
                   render={({ field }) => (
                     <TextField
                       {...field}
+                      onChange={(e) => {
+                        setJobCreatedDateTouched(true);
+                        field.onChange(e);
+                      }}
                       type="date"
-                      label="Job Created Date"
+                      label="Job Opening"
                       fullWidth
                       required
                       InputLabelProps={{ shrink: true }}
+                      helperText="Defaults to 3 business days after Date Received"
                     />
                   )}
                 />
@@ -237,7 +302,7 @@ export function JobCreateForm() {
                   name="comments"
                   control={control}
                   render={({ field }) => (
-                    <TextField {...field} label="Comments" fullWidth multiline minRows={2} />
+                    <TextField {...field} label="Comment" fullWidth multiline minRows={2} />
                   )}
                 />
               </Grid>

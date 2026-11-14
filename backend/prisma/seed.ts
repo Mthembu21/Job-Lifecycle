@@ -10,7 +10,7 @@ async function main() {
   const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 10);
 
   const usersByRole: Record<Role, { name: string; email: string }> = {
-    STOREMAN: { name: "Sipho Storeman", email: "storeman@demo.local" },
+    STOREMAN: { name: "Storeman", email: "storeman@demo.local" },
     PLANNER: { name: "Priya Planner", email: "planner@demo.local" },
     SUPERVISOR: { name: "Sam Supervisor", email: "supervisor@demo.local" },
     ADMIN: { name: "Alex Admin", email: "admin@demo.local" },
@@ -34,6 +34,7 @@ main()
     console.error(e);
     process.exit(1);
   })
+  
   .finally(async () => {
     await prisma.$disconnect();
   });

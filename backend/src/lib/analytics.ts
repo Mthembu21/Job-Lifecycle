@@ -181,6 +181,14 @@ export function buildDashboardSummary(jobs: JobDto[]) {
       .filter((j) => j.invoice?.invoiceDate && monthKey(new Date(j.invoice.invoiceDate)) === key)
       .reduce((sum, j) => sum + toNumber(j.invoice?.invoiceAmount), 0),
   }));
+  const jobsInvoicedByMonth: Bucket[] = monthKeys.map((key) => ({
+    label: monthLabel(key),
+    value: jobs.filter((j) => j.invoice?.invoiceDate && monthKey(new Date(j.invoice.invoiceDate)) === key).length,
+  }));
+  const jobsInvoicedByWeek: Bucket[] = weekKeys.map((key) => ({
+    label: weekLabel(key),
+    value: jobs.filter((j) => j.invoice?.invoiceDate && weekKey(new Date(j.invoice.invoiceDate)) === key).length,
+  }));
   const jobValueByMonth: Bucket[] = monthKeys.map((key) => ({
     label: monthLabel(key),
     value: jobs
@@ -274,6 +282,8 @@ export function buildDashboardSummary(jobs: JobDto[]) {
       jobValueByMonth,
       invoiceValueByWeek,
       jobValueByWeek,
+      jobsInvoicedByMonth,
+      jobsInvoicedByWeek,
       quotationPerformance,
       slaComplianceTrend,
       delayedByStage,

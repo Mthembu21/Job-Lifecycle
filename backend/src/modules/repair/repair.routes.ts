@@ -13,8 +13,15 @@ const router = Router({ mergeParams: true });
 const repairSchema = z.object({
   purchaseOrderNumber: z.string().optional(),
   purchaseOrderDate: z.coerce.date().optional(),
+  plannedAssemblyDate: z.coerce.date().optional(),
+  actualAssemblyDate: z.coerce.date().optional(),
   repairStartDate: z.coerce.date().optional(),
   repairCompletionDate: z.coerce.date().optional(),
+  outworkRequired: z.string().optional(),
+  supplierName: z.string().optional(),
+  outworkDateSent: z.coerce.date().optional(),
+  outworkDateReceived: z.coerce.date().optional(),
+  waitingForGoAhead: z.boolean().optional(),
   technicianName: z.string().optional(),
   labourHours: z.number().nonnegative().optional(),
   partsCost: z.number().nonnegative().optional(),
@@ -54,6 +61,34 @@ router.patch(
       action: "UPDATE",
       summary: diffSummary(before, updated),
       comment: data.comments ?? null,
+      changedById: req.user!.sub,
+    });
+
+    const fullJob = await prisma.job.findUnique({ where: { id: jobId }, include: jobListInclude });
+    res.json(toJobDto(fullJob!));
+  })
+);
+
+router.delete(
+  "/",
+  authenticate,
+  requireRole("PLANNER"),
+  asyncHandler(async (req, res) => {
+    const jobId = req.params.jobId;
+    const job = await prisma.job.findUnique({ where: { id: jobId }, include: { repair: true, dispatch: true } });
+    if (!job) throw new HttpError(404, "Job not found");
+    if (!job.repair) throw new HttpError(404, "This job has no repair to delete");
+    if (job.dispatch) {
+      throw new HttpError(400, "Delete this job's dispatch first — it depends on the repair being complete");
+    }
+
+    await prisma.repair.delete({ where: { jobId } });
+
+    await writeAuditLog({
+      jobId,
+      stage: "REPAIR",
+      action: "DELETE",
+      summary: "Repair deleted",
       changedById: req.user!.sub,
     });
 

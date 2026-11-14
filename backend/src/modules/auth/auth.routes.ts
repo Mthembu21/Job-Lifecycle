@@ -1,10 +1,11 @@
 import { Router } from "express";
-import bcrypt from "bcryptjs";
 import { z } from "zod";
+import bcrypt from "bcryptjs";
 import { prisma } from "../../lib/prisma";
 import { signToken } from "../../lib/jwt";
 import { asyncHandler, HttpError } from "../../middleware/errorHandler";
 import { authenticate } from "../../middleware/auth";
+import { getFallbackUser, resolveLoginUser } from "./auth.service";
 
 const router = Router();
 
@@ -17,11 +18,27 @@ router.post(
   "/login",
   asyncHandler(async (req, res) => {
     const { email, password } = loginSchema.parse(req.body);
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) throw new HttpError(401, "Invalid email or password");
 
-    const valid = await bcrypt.compare(password, user.passwordHash);
-    if (!valid) throw new HttpError(401, "Invalid email or password");
+    const user = await resolveLoginUser({
+      email,
+      password,
+      findUserByEmail: async (userEmail) => {
+        const dbUser = await prisma.user.findUnique({ where: { email: userEmail } });
+        return dbUser
+          ? {
+              id: dbUser.id,
+              name: dbUser.name,
+              email: dbUser.email,
+              role: dbUser.role,
+              passwordHash: dbUser.passwordHash,
+            }
+          : null;
+      },
+      comparePassword: async (candidatePassword, passwordHash) => bcrypt.compare(candidatePassword, passwordHash),
+      fallbackUser: getFallbackUser(email),
+    });
+
+    if (!user) throw new HttpError(401, "Invalid email or password");
 
     const token = signToken({ sub: user.id, role: user.role, name: user.name, email: user.email });
     res.json({

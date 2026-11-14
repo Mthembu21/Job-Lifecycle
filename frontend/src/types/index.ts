@@ -47,6 +47,7 @@ export interface UserSummary {
 
 export interface Quotation {
   evaluationDate: string | null;
+  plannedDisassemblyDate: string | null;
   epirocQuotationDate: string | null;
   mcoNumber: string | null;
   quotationAmount: number | null;
@@ -59,8 +60,15 @@ export interface Quotation {
 export interface Repair {
   purchaseOrderNumber: string | null;
   purchaseOrderDate: string | null;
+  plannedAssemblyDate: string | null;
+  actualAssemblyDate: string | null;
   repairStartDate: string | null;
   repairCompletionDate: string | null;
+  outworkRequired: string | null;
+  supplierName: string | null;
+  outworkDateSent: string | null;
+  outworkDateReceived: string | null;
+  waitingForGoAhead: boolean | null;
   technicianName: string | null;
   labourHours: number | null;
   partsCost: number | null;
@@ -70,6 +78,7 @@ export interface Repair {
 }
 
 export interface Dispatch {
+  dispatchRequestDate: string | null;
   dispatchDate: string | null;
   courier: string | null;
   trackingNumber: string | null;
@@ -83,6 +92,7 @@ export interface Invoice {
   invoiceNumber: string | null;
   invoiceDate: string | null;
   invoiceAmount: number | null;
+  plannedClosingDate: string | null;
   closingDate: string | null;
   comments: string | null;
   delayReason: string | null;
@@ -95,6 +105,11 @@ export interface Job {
   customer: string;
   serialNumber: string;
   partNumber: string | null;
+  machineNumber: string | null;
+  machineSerialNumber: string | null;
+  customerRef: string | null;
+  customerAccount: string | null;
+  dateReceived: string | null;
   woNumber: string | null;
   woNumberSetAt: string | null;
   poNumber: string | null;
@@ -103,6 +118,7 @@ export interface Job {
   priority: Priority;
   jobCreatedDate: string;
   comments: string | null;
+  isLegacyImport: boolean;
   createdBy: UserSummary | null;
   quotation: Quotation | null;
   repair: Repair | null;

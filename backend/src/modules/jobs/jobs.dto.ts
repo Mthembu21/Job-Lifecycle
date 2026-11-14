@@ -12,6 +12,11 @@ export function toJobDto(job: JobWithListRelations) {
     customer: job.customer,
     serialNumber: job.serialNumber,
     partNumber: job.partNumber,
+    machineNumber: job.machineNumber,
+    machineSerialNumber: job.machineSerialNumber,
+    customerRef: job.customerRef,
+    customerAccount: job.customerAccount,
+    dateReceived: job.dateReceived,
     woNumber: job.woNumber,
     woNumberSetAt: job.woNumberSetAt,
     poNumber: job.poNumber,
@@ -20,6 +25,7 @@ export function toJobDto(job: JobWithListRelations) {
     priority: job.priority,
     jobCreatedDate: job.jobCreatedDate,
     comments: job.comments,
+    isLegacyImport: job.isLegacyImport,
     createdBy: job.createdBy ? { id: job.createdBy.id, name: job.createdBy.name } : null,
     quotation: job.quotation
       ? { ...job.quotation, quotedBy: job.quotation.quotedBy ? namePick(job.quotation.quotedBy) : null }
