@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { Download, FileSpreadsheet, Upload } from "lucide-react";
 import { useAuth } from "../../auth/AuthContext";
+import { canUseDataImportExport } from "../../auth/permissions";
 import {
   downloadSchedulerExport,
   ImportSummary,
@@ -23,7 +24,7 @@ export function DataImportExportPage() {
   const previewMutation = usePreviewSchedulerImport();
   const importMutation = useRunSchedulerImport();
 
-  const canExport = user?.role === "STOREMAN" || user?.role === "PLANNER" || user?.role === "ADMIN";
+  const canExport = canUseDataImportExport(user?.role);
   const canImport = user?.role === "ADMIN";
 
   if (!canExport) {

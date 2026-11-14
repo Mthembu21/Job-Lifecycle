@@ -35,7 +35,7 @@ router.post(
 router.get(
   "/scheduler/export",
   authenticate,
-  requireRole("STOREMAN", "PLANNER"),
+  requireRole("PLANNER"),
   asyncHandler(async (_req, res) => {
     const buffer = await exportSchedulerWorkbook();
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");

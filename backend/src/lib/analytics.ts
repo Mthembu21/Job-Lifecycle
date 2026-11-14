@@ -97,6 +97,8 @@ export interface SummaryOptions {
   anchor?: Date;
   /** Explicit week buckets (Monday ISO dates); default is the 12 weeks up to `anchor`. */
   weekKeys?: string[];
+  /** Explicit month buckets ("YYYY-MM"); default is the 12 months up to `anchor`. */
+  monthKeys?: string[];
 }
 
 export function buildDashboardSummary(jobs: JobDto[], opts: SummaryOptions = {}) {
@@ -150,7 +152,7 @@ export function buildDashboardSummary(jobs: JobDto[], opts: SummaryOptions = {})
     { label: "Invoiced Value", value: totalInvoicedValue },
   ];
 
-  const monthKeys = lastNMonthKeys(12, anchor);
+  const monthKeys = opts.monthKeys ?? lastNMonthKeys(12, anchor);
   const weekKeys = opts.weekKeys ?? lastNWeekKeys(12, anchor);
   const createdMonth = (j: JobDto) => monthKeyOf(new Date(j.jobCreatedDate));
   const createdWeek = (j: JobDto) => weekKey(new Date(j.jobCreatedDate));

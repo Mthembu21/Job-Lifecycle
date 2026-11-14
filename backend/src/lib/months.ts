@@ -26,15 +26,32 @@ export function nextMonthKey(key: string): string {
  * running — and is the cut-off for "what had happened by then".
  */
 export function monthWindow(year: number, month: number, now = new Date()) {
-  const start = new Date(year, month - 1, 1);
-  const endOfMonth = new Date(new Date(year, month, 1).getTime() - 1);
-  const isCurrentMonth = endOfMonth.getTime() > now.getTime();
-  const asOf = isCurrentMonth ? now : endOfMonth;
-  /** Date falls between the 1st and the cut-off. */
-  const inMonth = (d: Date | string | null | undefined) => {
+  const w = periodWindow(monthKeyOf(new Date(year, month - 1, 1)), new Date(year, month - 1, 1), new Date(year, month, 1), now);
+  return { ...w, endOfMonth: w.end, isCurrentMonth: w.isCurrent, inMonth: w.inPeriod };
+}
+
+/** A calendar year ("2026"), same shape as a month window. */
+export function yearWindow(year: number, now = new Date()) {
+  return periodWindow(String(year), new Date(year, 0, 1), new Date(year + 1, 0, 1), now);
+}
+
+export type PeriodWindow = ReturnType<typeof periodWindow>;
+
+/** `start` up to (not including) `nextStart`; cut off at `now` while the period is still running. */
+function periodWindow(key: string, start: Date, nextStart: Date, now: Date) {
+  const end = new Date(nextStart.getTime() - 1);
+  const isCurrent = end.getTime() > now.getTime();
+  const asOf = isCurrent ? now : end;
+  /** Date falls between the start and the cut-off. */
+  const inPeriod = (d: Date | string | null | undefined) => {
     if (!d) return false;
     const t = new Date(d).getTime();
     return t >= start.getTime() && t <= asOf.getTime();
   };
-  return { key: monthKeyOf(start), start, endOfMonth, isCurrentMonth, asOf, inMonth };
+  return { key, start, end, isCurrent, asOf, inPeriod };
+}
+
+/** "2026" → 2026; null if it isn't a plausible year. */
+export function parseYear(value: unknown): number | null {
+  return typeof value === "string" && /^\d{4}$/.test(value) ? Number(value) : null;
 }

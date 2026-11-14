@@ -26,13 +26,14 @@ import { TrendLineChart } from "./charts/TrendLineChart";
 import { CategoryBarChart } from "./charts/CategoryBarChart";
 import { MonthDetailCard } from "./MonthDetailCard";
 import { ForecastSection } from "./ForecastSection";
-import { MonthPicker } from "./MonthPicker";
+import { PeriodPicker } from "./PeriodPicker";
+import { YearForecastSection } from "./YearForecastSection";
 import { currentMonthKey } from "../../utils/month";
 import { formatCurrency as currency } from "../../utils/currency";
 import { useAuth } from "../../auth/AuthContext";
 import { PageHeader, PageSpinner, SectionHeading, Segmented } from "../../components/ui";
 
-type Period = "month" | "week";
+type TrendView = "month" | "week";
 
 function formatAsOf(iso: string): string {
   return new Date(iso).toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" });
@@ -40,25 +41,27 @@ function formatAsOf(iso: string): string {
 
 export function DashboardPage() {
   const { user } = useAuth();
-  // The selected month lives in the URL (?month=2026-10 / ?month=all) so it survives refresh,
+  // The selected period lives in the URL (?period=2026-10 or ?period=2026) so it survives refresh,
   // back/forward, and can be shared. Default: the current month.
   const [searchParams, setSearchParams] = useSearchParams();
-  const month = searchParams.get("month") ?? currentMonthKey();
-  const { data, isLoading, isPlaceholderData } = useDashboardSummary(month);
+  const selected = searchParams.get("period") ?? currentMonthKey();
+  const { data, isLoading, isPlaceholderData } = useDashboardSummary(selected);
   const { mode } = useThemeMode();
   const categorical = getCategoricalPalette(mode);
-  const [jobsPeriod, setJobsPeriod] = useState<Period>("month");
-  const [financePeriod, setFinancePeriod] = useState<Period>("month");
+  const [jobsPeriod, setJobsPeriod] = useState<TrendView>("month");
+  const [financePeriod, setFinancePeriod] = useState<TrendView>("month");
 
   if (user?.role === "STOREMAN") {
     return <Navigate to="/jobs" replace />;
   }
 
-  function selectMonth(next: string) {
-    setSearchParams(next === currentMonthKey() ? {} : { month: next });
+  function selectPeriod(next: string) {
+    setSearchParams(next === currentMonthKey() ? {} : { period: next });
   }
 
-  const picker = <MonthPicker value={month} months={data?.availableMonths ?? []} onChange={selectMonth} />;
+  const picker = (
+    <PeriodPicker value={selected} months={data?.availableMonths ?? []} years={data?.availableYears ?? []} onChange={selectPeriod} />
+  );
 
   if (isLoading || !data) {
     return (
@@ -69,15 +72,17 @@ export function DashboardPage() {
     );
   }
 
-  const { kpis, charts, period, monthDetail, forecast } = data;
-  const isMonth = period !== null;
-  const periodName = period?.label ?? "All time";
+  const { kpis, charts, period, monthDetail, forecast, yearForecast } = data;
+  const isMonth = period.kind === "month";
+  const periodName = period.label;
   // Where the pipeline numbers are measured.
-  const asOfLabel = !period || period.isCurrentMonth ? "today" : `at ${formatAsOf(period.asOf)}`;
-  const trendOptions: { value: Period; label: string }[] = [
+  const asOfLabel = period.isCurrent ? "today" : `at ${formatAsOf(period.asOf)}`;
+  const trendOptions: { value: TrendView; label: string }[] = [
     { value: "month", label: "Month" },
-    { value: "week", label: isMonth ? "Weeks of month" : "Week" },
+    { value: "week", label: isMonth ? "Weeks of month" : "Last 12 weeks" },
   ];
+  // Trend charts: a month view shows the 12 months up to it; a year view shows January–December.
+  const trendTitle = isMonth ? `to ${periodName}` : periodName;
 
   const jobsTrend = jobsPeriod === "month" ? charts.jobsCreatedByMonth : charts.jobsCreatedByWeek;
   const jobsInvoicedTrend = jobsPeriod === "month" ? charts.jobsInvoicedByMonth : charts.jobsInvoicedByWeek;
@@ -89,20 +94,16 @@ export function DashboardPage() {
     <div className={isPlaceholderData ? "opacity-70 transition-opacity" : "transition-opacity"}>
       <PageHeader
         title="Dashboard"
-        subtitle={
-          isMonth
-            ? `${periodName} — activity during the month, pipeline ${asOfLabel}`
-            : "All jobs in the system — pipeline as of today"
-        }
+        subtitle={`${periodName} — activity during the ${isMonth ? "month" : "year"}, pipeline ${asOfLabel}`}
       >
         {picker}
       </PageHeader>
 
-      <SectionHeading>{isMonth ? `${periodName} activity` : "All-time totals"}</SectionHeading>
+      <SectionHeading>{periodName} activity</SectionHeading>
       <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-9">
-        <StatTile label={isMonth ? "Jobs Received" : "Total Jobs Created"} value={kpis.totalJobsCreated} icon={Briefcase} />
+        <StatTile label="Jobs Received" value={kpis.totalJobsCreated} icon={Briefcase} />
         <StatTile label="Jobs Invoiced" value={kpis.jobsInvoiced} icon={ReceiptText} />
-        <StatTile wide label={isMonth ? "Invoiced Value" : "Total Invoiced Value"} value={currency(kpis.totalInvoicedValue)} icon={Wallet} />
+        <StatTile wide label="Invoiced Value" value={currency(kpis.totalInvoicedValue)} icon={Wallet} />
         <StatTile label="Jobs Closed" value={kpis.closedJobs} icon={CheckCircle2} />
         <StatTile
           wide
@@ -138,13 +139,14 @@ export function DashboardPage() {
       </div>
 
       {forecast && <ForecastSection report={forecast} />}
+      {yearForecast && <YearForecastSection data={yearForecast} onOpenMonth={selectPeriod} />}
 
-      {period && monthDetail && <MonthDetailCard detail={monthDetail} periodLabel={period.label} asOfLabel={asOfLabel} />}
+      <MonthDetailCard detail={monthDetail} periodLabel={period.label} asOfLabel={asOfLabel} />
 
       <SectionHeading>Volume &amp; Financials</SectionHeading>
       <div className="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ChartCard
-          title={isMonth ? `Jobs Created vs Invoiced — to ${periodName}` : "Jobs Created vs Invoiced"}
+          title={`Jobs Created vs Invoiced — ${trendTitle}`}
           action={<Segmented label="Jobs period" value={jobsPeriod} options={trendOptions} onChange={setJobsPeriod} />}
         >
           <TrendLineChart
@@ -156,7 +158,7 @@ export function DashboardPage() {
           />
         </ChartCard>
         <ChartCard
-          title={isMonth ? `Invoice & Job Value — to ${periodName}` : "Invoice & Job Value Trend"}
+          title={`Invoice & Job Value — ${trendTitle}`}
           action={
             <Segmented label="Finance period" value={financePeriod} options={trendOptions} onChange={setFinancePeriod} />
           }
@@ -171,7 +173,7 @@ export function DashboardPage() {
           />
         </ChartCard>
         <div className="lg:col-span-2">
-          <ChartCard title={isMonth ? `Value Breakdown — ${periodName}` : "Value Breakdown"}>
+          <ChartCard title={`Value Breakdown — ${periodName}`}>
             <CategoryBarChart
               categories={charts.valueBreakdown.map((b) => b.label)}
               series={[{ label: "Value", data: charts.valueBreakdown.map((b) => b.value), color: categorical[0] }]}
@@ -184,7 +186,7 @@ export function DashboardPage() {
       <SectionHeading>Lifecycle Performance</SectionHeading>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-4">
         <div className="xl:col-span-2">
-          <ChartCard title={isMonth ? `Jobs Received by Type — ${periodName}` : "Jobs by Type"}>
+          <ChartCard title={`Jobs Received by Type — ${periodName}`}>
             <CategoryBarChart
               categories={charts.jobsByType.map((b) => b.label)}
               series={[{ label: "Jobs", data: charts.jobsByType.map((b) => b.value), color: categorical[0] }]}
@@ -200,7 +202,7 @@ export function DashboardPage() {
           </ChartCard>
         </div>
         <div className="lg:col-span-2">
-          <ChartCard title={isMonth ? `Average Days per Stage — completed in ${periodName}` : "Average Days per Stage (Actual vs Target)"}>
+          <ChartCard title={`Average Days per Stage — completed in ${periodName}`}>
             <CategoryBarChart
               categories={charts.avgDaysPerStage.map((s) => s.label)}
               series={[
@@ -211,7 +213,7 @@ export function DashboardPage() {
             />
           </ChartCard>
         </div>
-        <ChartCard title={isMonth ? `Quotations Issued — ${periodName}` : "Quotation Performance"}>
+        <ChartCard title={`Quotations Issued — ${periodName}`}>
           <div className="mt-1 flex flex-col gap-3">
             <div className="rounded-lg border-l-4 border-success bg-success-soft px-4 py-3 dark:bg-success/15">
               <p className="text-xs font-medium text-gray-600 dark:text-gray-300">Within SLA</p>
