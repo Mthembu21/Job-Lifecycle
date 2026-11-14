@@ -1,6 +1,4 @@
-import { createContext, ReactNode, useContext, useMemo, useState } from "react";
-import { CssBaseline, ThemeProvider as MuiThemeProvider, createTheme } from "@mui/material";
-import { EPIROC_BLACK, EPIROC_YELLOW } from "./epirocBrand";
+import { createContext, ReactNode, useContext, useEffect, useState } from "react";
 
 type Mode = "light" | "dark";
 
@@ -13,55 +11,30 @@ const ThemeModeContext = createContext<ThemeModeContextValue | undefined>(undefi
 
 const STORAGE_KEY = "job-lifecycle.theme-mode";
 
+function readStoredMode(): Mode {
+  try {
+    return localStorage.getItem(STORAGE_KEY) === "dark" ? "dark" : "light";
+  } catch {
+    return "light";
+  }
+}
+
+/** Toggles Tailwind's `dark` class on <html>; components style themselves with `dark:` variants. */
 export function AppThemeProvider({ children }: { children: ReactNode }) {
-  const [mode, setMode] = useState<Mode>(() => (localStorage.getItem(STORAGE_KEY) as Mode) || "light");
+  const [mode, setMode] = useState<Mode>(readStoredMode);
 
-  const toggleMode = () => {
-    setMode((prev) => {
-      const next = prev === "light" ? "dark" : "light";
-      localStorage.setItem(STORAGE_KEY, next);
-      return next;
-    });
-  };
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", mode === "dark");
+    try {
+      localStorage.setItem(STORAGE_KEY, mode);
+    } catch {
+      /* storage unavailable — preference just won't persist */
+    }
+  }, [mode]);
 
-  const theme = useMemo(
-    () =>
-      createTheme({
-        palette: {
-          mode,
-          primary: { main: EPIROC_YELLOW, contrastText: EPIROC_BLACK },
-          secondary: { main: EPIROC_BLACK, contrastText: "#FFFFFF" },
-          success: { main: "#1E8E3E" },
-          warning: { main: "#F4A100" },
-          error: { main: "#D93025" },
-          background:
-            mode === "light"
-              ? { default: "#F4F6F8", paper: "#FFFFFF" }
-              : { default: "#0F1417", paper: "#171D21" },
-        },
-        shape: { borderRadius: 8 },
-        typography: {
-          fontFamily: ["Inter", "Roboto", "Segoe UI", "Arial", "sans-serif"].join(","),
-        },
-        components: {
-          MuiAppBar: {
-            styleOverrides: {
-              root: { backgroundImage: "none" },
-            },
-          },
-        },
-      }),
-    [mode]
-  );
+  const toggleMode = () => setMode((prev) => (prev === "light" ? "dark" : "light"));
 
-  return (
-    <ThemeModeContext.Provider value={{ mode, toggleMode }}>
-      <MuiThemeProvider theme={theme}>
-        <CssBaseline />
-        {children}
-      </MuiThemeProvider>
-    </ThemeModeContext.Provider>
-  );
+  return <ThemeModeContext.Provider value={{ mode, toggleMode }}>{children}</ThemeModeContext.Provider>;
 }
 
 export function useThemeMode(): ThemeModeContextValue {

@@ -39,7 +39,7 @@ router.get(
   asyncHandler(async (_req, res) => {
     const buffer = await exportSchedulerWorkbook();
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.setHeader("Content-Disposition", `attachment; filename="SCHEDULER-2025-export.xlsx"`);
+    res.setHeader("Content-Disposition", `attachment; filename="Epiroc-Job-Tracker-${new Date().toISOString().slice(0, 10)}.xlsx"`);
     res.send(buffer);
   })
 );

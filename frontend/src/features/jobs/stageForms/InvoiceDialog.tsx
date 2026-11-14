@@ -1,8 +1,13 @@
 import { Controller, useForm } from "react-hook-form";
-import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Grid, TextField } from "@mui/material";
 import { Job } from "../../../types";
 import { toDateInputValue } from "../../../utils/date";
+import { formatCurrency } from "../../../utils/currency";
+import { defaultForecastAmount } from "../../../utils/forecast";
+import { isNonInvoicedJobType } from "../../../utils/jobTypes";
+import { JOB_TYPE_LABELS } from "../../../constants";
 import { useStageSubmit } from "../useStageSubmit";
+import { Alert, TextField } from "../../../components/ui";
+import { DelayReasonField, StageFormDialog } from "./StageFormDialog";
 
 interface FormValues {
   invoiceNumber: string;
@@ -14,8 +19,13 @@ interface FormValues {
   delayReason: string;
 }
 
+/**
+ * Last stage of the lifecycle. Customer jobs are invoiced (and close on the invoice date);
+ * internal and warranty jobs are never invoiced, so the same step just closes them.
+ */
 export function InvoiceDialog({ job, onClose }: { job: Job; onClose: () => void }) {
   const { submit, error, requireDelayReason, submitting } = useStageSubmit(job.id, "invoice", onClose);
+  const noInvoice = isNonInvoicedJobType(job.jobType);
 
   const { control, handleSubmit } = useForm<FormValues>({
     defaultValues: {
@@ -31,7 +41,11 @@ export function InvoiceDialog({ job, onClose }: { job: Job; onClose: () => void 
 
   function onSubmit(values: FormValues) {
     const payload: Record<string, unknown> = { ...values };
-    if (payload.invoiceAmount === "") delete payload.invoiceAmount;
+    if (noInvoice) {
+      delete payload.invoiceNumber;
+      delete payload.invoiceDate;
+      delete payload.invoiceAmount;
+    } else if (payload.invoiceAmount === "") delete payload.invoiceAmount;
     else payload.invoiceAmount = Number(values.invoiceAmount);
     for (const key of Object.keys(payload)) {
       if (payload[key] === "") delete payload[key];
@@ -40,108 +54,81 @@ export function InvoiceDialog({ job, onClose }: { job: Job; onClose: () => void 
   }
 
   const dispatchNotDone = !job.dispatch?.dispatchDate;
+  const value = defaultForecastAmount(job);
+  const typeLabel = JOB_TYPE_LABELS[job.jobType];
 
   return (
-    <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Invoicing Stage — {job.referenceNumber}</DialogTitle>
-      <DialogContent>
-        <Grid container spacing={2} sx={{ mt: 0.5 }}>
-          {dispatchNotDone && (
-            <Grid item xs={12}>
-              <Alert severity="warning">This job has not been dispatched yet — invoicing cannot be saved until it is.</Alert>
-            </Grid>
-          )}
-          {error && (
-            <Grid item xs={12}>
-              <Alert severity="error">{error}</Alert>
-            </Grid>
-          )}
-          <Grid item xs={12} sm={6}>
-            <Controller
-              name="invoiceNumber"
-              control={control}
-              render={({ field }) => <TextField {...field} label="Invoice Number" fullWidth />}
-            />
-          </Grid>
-          <Grid item xs={12} sm={6}>
-            <Controller
-              name="invoiceDate"
-              control={control}
-              render={({ field }) => (
-                <TextField {...field} type="date" label="Invoice Date" fullWidth InputLabelProps={{ shrink: true }} />
-              )}
-            />
-          </Grid>
-          <Grid item xs={12} sm={6}>
-            <Controller
-              name="invoiceAmount"
-              control={control}
-              render={({ field }) => <TextField {...field} type="number" label="Invoice Amount" fullWidth />}
-            />
-          </Grid>
-          <Grid item xs={12} sm={6}>
-            <Controller
-              name="plannedClosingDate"
-              control={control}
-              render={({ field }) => (
-                <TextField {...field} type="date" label="Planned Job Closing" fullWidth InputLabelProps={{ shrink: true }} />
-              )}
-            />
-          </Grid>
-          <Grid item xs={12} sm={6}>
-            <Controller
-              name="closingDate"
-              control={control}
-              render={({ field }) => (
-                <TextField
-                  {...field}
-                  type="date"
-                  label="Actual Job Closing"
-                  fullWidth
-                  InputLabelProps={{ shrink: true }}
-                  helperText="Defaults to the invoice date if left blank"
-                />
-              )}
-            />
-          </Grid>
-          <Grid item xs={12}>
-            <Controller
-              name="comments"
-              control={control}
-              render={({ field }) => <TextField {...field} label="Remark(s)" fullWidth multiline minRows={2} />}
-            />
-          </Grid>
-          <Grid item xs={12}>
-            <Controller
-              name="delayReason"
-              control={control}
-              rules={{ required: requireDelayReason }}
-              render={({ field, fieldState }) => (
-                <TextField
-                  {...field}
-                  label="Delay Reason"
-                  fullWidth
-                  multiline
-                  minRows={2}
-                  required={requireDelayReason}
-                  error={!!fieldState.error}
-                  helperText={
-                    requireDelayReason
-                      ? "Required: invoicing has exceeded the 7-day SLA target"
-                      : "Only required if the invoicing SLA has been exceeded"
-                  }
-                />
-              )}
-            />
-          </Grid>
-        </Grid>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
-        <Button variant="contained" onClick={handleSubmit(onSubmit)} disabled={submitting || dispatchNotDone}>
-          {submitting ? "Saving..." : "Save"}
-        </Button>
-      </DialogActions>
-    </Dialog>
+    <StageFormDialog
+      title={`${noInvoice ? "Close Job" : "Invoicing Stage"} — ${job.referenceNumber}`}
+      error={error}
+      warning={
+        dispatchNotDone
+          ? `This job has not been dispatched yet — it can't be ${noInvoice ? "closed" : "invoiced"} until it is.`
+          : null
+      }
+      submitting={submitting}
+      saveDisabled={dispatchNotDone}
+      onSave={handleSubmit(onSubmit)}
+      onClose={onClose}
+    >
+      {noInvoice && (
+        <Alert severity="info" className="sm:col-span-2">
+          {typeLabel} jobs aren't invoiced to the customer. Enter the closing date to close the job — it's counted on the
+          dashboard as "Closed without invoice" at its PO value{value > 0 ? ` (${formatCurrency(value)})` : ""}. If this
+          job should be invoiced, change its Service Type on the job page.
+        </Alert>
+      )}
+      {!noInvoice && (
+        <>
+          <Controller
+            name="invoiceNumber"
+            control={control}
+            render={({ field }) => <TextField {...field} label="Invoice Number" />}
+          />
+          <Controller
+            name="invoiceDate"
+            control={control}
+            render={({ field }) => <TextField {...field} type="date" label="Invoice Date" />}
+          />
+          <Controller
+            name="invoiceAmount"
+            control={control}
+            render={({ field }) => <TextField {...field} type="number" label="Invoice Amount" />}
+          />
+        </>
+      )}
+      <Controller
+        name="plannedClosingDate"
+        control={control}
+        render={({ field }) => <TextField {...field} type="date" label="Planned Job Closing" />}
+      />
+      <Controller
+        name="closingDate"
+        control={control}
+        rules={{ required: noInvoice ? "Enter the date the job was closed" : false }}
+        render={({ field, fieldState }) => (
+          <TextField
+            {...field}
+            type="date"
+            label={noInvoice ? "Closing Date" : "Actual Job Closing"}
+            required={noInvoice}
+            error={!!fieldState.error}
+            helperText={fieldState.error?.message ?? (noInvoice ? "The job closes on this date" : "Defaults to the invoice date if left blank")}
+          />
+        )}
+      />
+      <Controller
+        name="comments"
+        control={control}
+        render={({ field }) => <TextField {...field} label="Remark(s)" multiline className="sm:col-span-2" />}
+      />
+      <DelayReasonField
+        control={control}
+        name="delayReason"
+        required={requireDelayReason}
+        requiredText={`Required: ${noInvoice ? "closing" : "invoicing"} has exceeded the 7-day SLA target`}
+        optionalText={`Only required if ${noInvoice ? "closing" : "invoicing"} takes longer than 7 days after dispatch`}
+      />
+    </StageFormDialog>
   );
 }

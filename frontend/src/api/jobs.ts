@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "./client";
-import { AuditLogEntry, Job } from "../types";
+import { AuditLogEntry, Job, JobType } from "../types";
 
 export interface JobFilters {
   search?: string;
@@ -90,6 +90,10 @@ export function useUpdateJob(jobId: string) {
       poNumber?: string;
       woNumberSetAt?: string;
       jobCreatedDate?: string;
+      /** "YYYY-MM"; null clears the forecast. */
+      forecastMonth?: string | null;
+      forecastAmount?: number | null;
+      jobType?: JobType;
     }) => {
       const { data } = await apiClient.patch<Job>(`/jobs/${jobId}`, input);
       return data;

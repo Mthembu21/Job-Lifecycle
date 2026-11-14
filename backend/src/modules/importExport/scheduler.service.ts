@@ -4,17 +4,36 @@ import { prisma } from "../../lib/prisma";
 import { HttpError } from "../../middleware/errorHandler";
 import {
   COL,
-  COMPUTED_DAY_COLUMNS,
   DATA_START_ROW,
-  FIELD_HEADER_ROW,
-  GROUP_HEADERS,
   HEADERS,
   MappedSchedulerRow,
   SCHEDULER_SHEET_NAME,
-  jobTypeToServiceType,
   mapSchedulerRow,
   rowHasJobData,
 } from "./scheduler.mapping";
+import { locateExtraColumns } from "./scheduler.extras";
+import { ensureForecastsFrozen } from "../../lib/forecast";
+import { isNonInvoicedJobType } from "../../lib/jobTypes";
+
+const normalizeHeader = (v: unknown) => String(v ?? "").trim().toUpperCase();
+
+/**
+ * Index of the first data row. The original tracker has its column headers on row 2, but the app's
+ * branded export puts a logo banner above them — so find the header row by its text (first scanned
+ * rows only) and fall back to the tracker's fixed layout.
+ */
+function findDataStartRow(rows: unknown[][]): number {
+  const refHeader = normalizeHeader(HEADERS[COL.REFERENCE]);
+  const descHeader = normalizeHeader(HEADERS[COL.DESCRIPTION]);
+  const limit = Math.min(rows.length, 20);
+  for (let i = 0; i < limit; i++) {
+    const row = rows[i] ?? [];
+    if (normalizeHeader(row[COL.REFERENCE]) === refHeader && normalizeHeader(row[COL.DESCRIPTION]) === descHeader) {
+      return i + 1;
+    }
+  }
+  return DATA_START_ROW;
+}
 
 function readSchedulerRows(buffer: Buffer): unknown[][] {
   let workbook: XLSX.WorkBook;
@@ -48,7 +67,12 @@ export interface ImportSummary {
 
 async function planImport(buffer: Buffer): Promise<{ toCreate: MappedSchedulerRow[]; summary: ImportSummary }> {
   const rows = readSchedulerRows(buffer);
-  const dataRows = rows.slice(DATA_START_ROW).filter(rowHasJobData);
+  const dataStart = findDataStartRow(rows);
+  // Keep each row's real sheet position (1-based) before blank rows are filtered out.
+  const dataRows = rows
+    .map((row, i) => ({ row, rowNumber: i + 1 }))
+    .slice(dataStart)
+    .filter(({ row }) => rowHasJobData(row));
 
   const existingJobs = await prisma.job.findMany({ select: { referenceNumber: true } });
   const existingRefs = new Set(existingJobs.map((j) => j.referenceNumber.trim().toUpperCase()));
@@ -57,9 +81,12 @@ async function planImport(buffer: Buffer): Promise<{ toCreate: MappedSchedulerRo
   const toCreate: MappedSchedulerRow[] = [];
   const results: ImportRowResult[] = [];
 
-  dataRows.forEach((row, idx) => {
-    const rowNumber = DATA_START_ROW + idx + 1; // 1-based, matches spreadsheet row number
+  // App-only columns (present in workbooks exported by this app) are found by header text.
+  const extraColumns = dataStart > 0 ? locateExtraColumns(rows[dataStart - 1] ?? []) : [];
+
+  dataRows.forEach(({ row, rowNumber }) => {
     const mapped = mapSchedulerRow(row);
+    for (const [idx, col] of extraColumns) col.set!(mapped, row[idx]);
     const key = mapped.referenceNumber.trim().toUpperCase();
 
     if (existingRefs.has(key)) {
@@ -96,35 +123,65 @@ export async function runSchedulerImport(
   opts: { createdById: string; priority?: Priority }
 ): Promise<ImportSummary> {
   const { toCreate, summary } = await planImport(buffer);
-  const priority = opts.priority ?? "MEDIUM";
+  const defaultPriority = opts.priority ?? "MEDIUM";
+  // Imported rows can carry forecasts — freeze any started month first (see lib/forecast.ts).
+  await ensureForecastsFrozen();
+
+  // "Quoted by" / "Dispatched by" are exported as names; map them back to users where one matches.
+  const users = await prisma.user.findMany({ select: { id: true, name: true } });
+  const userIdByName = new Map(users.map((u) => [u.name.trim().toUpperCase(), u.id]));
+  const userId = (name?: string) => (name ? userIdByName.get(name.trim().toUpperCase()) : undefined);
 
   for (const mapped of toCreate) {
+    const { job } = mapped;
+    const { quotedByName, ...quotation } = mapped.quotation ?? {};
+    const { dispatchedByName, ...dispatch } = mapped.dispatch ?? {};
+
     await prisma.job.create({
       data: {
         referenceNumber: mapped.referenceNumber,
-        description: mapped.job.description,
-        partNumber: mapped.job.partNumber,
-        serialNumber: mapped.job.serialNumber,
-        customer: mapped.job.customer,
-        jobType: mapped.job.jobType,
-        poValue: mapped.job.poValue,
-        priority,
-        jobCreatedDate: mapped.job.jobCreatedDate,
-        comments: mapped.job.comments,
+        description: job.description,
+        partNumber: job.partNumber,
+        serialNumber: job.serialNumber,
+        machineNumber: job.machineNumber,
+        machineSerialNumber: job.machineSerialNumber,
+        customer: job.customer,
+        customerRef: job.customerRef,
+        customerAccount: job.customerAccount,
+        dateReceived: job.dateReceived,
+        woNumber: job.woNumber,
+        // A WO number with no recorded date counts as set on the job opening date.
+        woNumberSetAt: job.woNumber ? job.woNumberSetAt ?? job.jobCreatedDate : undefined,
+        poNumber: job.poNumber,
+        jobType: job.jobType,
+        poValue: job.poValue,
+        priority: job.priority ?? defaultPriority,
+        // Internal / warranty jobs are never invoiced, so any forecast on them is dropped.
+        forecastMonth: isNonInvoicedJobType(job.jobType) ? undefined : job.forecastMonth,
+        forecastAmount: job.forecastMonth && !isNonInvoicedJobType(job.jobType) ? job.forecastAmount : undefined,
+        jobCreatedDate: job.jobCreatedDate,
+        comments: job.comments,
         isLegacyImport: true,
         legacySheetRow: mapped.legacySheetRow,
         createdById: opts.createdById,
         ...(mapped.quotation && {
-          quotation: { create: { ...mapped.quotation } },
+          quotation: { create: { ...quotation, quotedById: userId(quotedByName) } },
         }),
         ...(mapped.repair && {
           repair: { create: { ...mapped.repair } },
         }),
         ...(mapped.dispatch && {
-          dispatch: { create: { ...mapped.dispatch } },
+          dispatch: { create: { ...dispatch, dispatchedById: userId(dispatchedByName) } },
         }),
         ...(mapped.invoice && {
-          invoice: { create: { ...mapped.invoice } },
+          invoice: {
+            create: {
+              ...mapped.invoice,
+              // Internal / warranty jobs with a closing date and no invoice are closed without invoice.
+              closedWithoutInvoice:
+                isNonInvoicedJobType(job.jobType) && !!mapped.invoice.closingDate && !mapped.invoice.invoiceDate,
+            },
+          },
         }),
       },
     });
@@ -133,164 +190,5 @@ export async function runSchedulerImport(
   return summary;
 }
 
-function daysBetween(a?: Date | null, b?: Date | null): number | "" {
-  if (!a || !b) return "";
-  return Math.max(0, Math.round((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24)));
-}
-
-// Columns holding a date value in the exported sheet - given real Date objects (not text) so Excel
-// treats them as native, sortable, reformattable dates.
-const DATE_COLUMNS = new Set<number>([
-  COL.DATE_RECEIVED,
-  COL.JOB_OPENING,
-  COL.PLANNED_DISASSEMBLY,
-  COL.ACTUAL_DISASSEMBLY,
-  COL.DATE_QUOTED,
-  COL.GO_AHEAD_TO_REPAIR,
-  COL.PLANNED_ASSEMBLY,
-  COL.ACTUAL_ASSEMBLY,
-  COL.START,
-  COL.END,
-  COL.DATE_SENT,
-  COL.DATE_RECEIVED_FROM_SUPPLIER,
-  COL.DISPATCH_REQUEST_DATE,
-  COL.ACTUAL_DISPATCH_DATE,
-  COL.PLANNED_JOB_CLOSING,
-  COL.ACTUAL_JOB_CLOSING,
-]);
-
-// Roughly-sized column widths (in characters) so the exported sheet is readable without a manual
-// resize - wide for free-text columns, narrow for short codes/dates/day-counts.
-const COLUMN_WIDTHS: Record<number, number> = {
-  [COL.REFERENCE]: 14,
-  [COL.DESCRIPTION]: 24,
-  [COL.PART_NR]: 14,
-  [COL.SERIAL_NR]: 16,
-  [COL.MACHINE_NR]: 14,
-  [COL.MACHINE_SERIAL_NR]: 16,
-  [COL.CUSTOMER]: 20,
-  [COL.CUSTOMER_REF]: 14,
-  [COL.CUSTOMER_ACC]: 14,
-  [COL.SERVICE_TYPE]: 14,
-  [COL.MCO_NR]: 12,
-  [COL.COMMENT]: 24,
-  [COL.OUTWORK]: 10,
-  [COL.SUPPLIER_NAME]: 18,
-  [COL.WAITING_FOR_GO_AHEAD]: 12,
-  [COL.ORDER_VALUE]: 14,
-  [COL.REMARKS]: 20,
-  [COL.STATUS]: 12,
-};
-const DEFAULT_DATE_WIDTH = 12;
-const DEFAULT_WIDTH = 10;
-
-function widthFor(col: number): number {
-  if (COLUMN_WIDTHS[col] !== undefined) return COLUMN_WIDTHS[col];
-  if (DATE_COLUMNS.has(col)) return DEFAULT_DATE_WIDTH;
-  return DEFAULT_WIDTH;
-}
-
-export async function exportSchedulerWorkbook(): Promise<Buffer> {
-  const jobs = await prisma.job.findMany({
-    include: { quotation: true, repair: true, dispatch: true, invoice: true },
-    orderBy: { jobCreatedDate: "asc" },
-  });
-
-  const groupRow: string[] = [];
-  GROUP_HEADERS.forEach(({ col, label }) => {
-    groupRow[col] = label;
-  });
-  const fieldRow = [...HEADERS];
-
-  const dataRows = jobs.map((job) => {
-    // Legacy-imported jobs carry the original row so untracked columns (machine numbers, supplier
-    // names, planned dates, etc.) survive the round trip; current field values are overlaid on top
-    // so edits made in the app since import are reflected in the export.
-    const legacy = (job.legacySheetRow as Record<string, string | number | null> | null) ?? {};
-    const row: (string | number | Date)[] = HEADERS.map((header, idx) => {
-      if (DATE_COLUMNS.has(idx)) return "";
-      const value = legacy[header];
-      return value === null || value === undefined ? "" : value;
-    });
-
-    const orDate = (d: Date | null | undefined) => d ?? "";
-
-    row[COL.REFERENCE] = job.referenceNumber;
-    row[COL.DESCRIPTION] = job.description;
-    row[COL.PART_NR] = job.partNumber ?? "";
-    row[COL.SERIAL_NR] = job.serialNumber;
-    row[COL.MACHINE_NR] = job.machineNumber ?? "";
-    row[COL.MACHINE_SERIAL_NR] = job.machineSerialNumber ?? "";
-    row[COL.CUSTOMER] = job.customer;
-    row[COL.CUSTOMER_REF] = job.customerRef ?? "";
-    row[COL.CUSTOMER_ACC] = job.customerAccount ?? "";
-    row[COL.SERVICE_TYPE] = jobTypeToServiceType(job.jobType);
-    row[COL.MCO_NR] = job.quotation?.mcoNumber ?? "";
-    row[COL.DATE_RECEIVED] = orDate(job.dateReceived);
-    row[COL.JOB_OPENING] = orDate(job.jobCreatedDate);
-    row[COL.PLANNED_DISASSEMBLY] = orDate(job.quotation?.plannedDisassemblyDate);
-    row[COL.ACTUAL_DISASSEMBLY] = orDate(job.quotation?.evaluationDate);
-    row[COL.DATE_QUOTED] = orDate(job.quotation?.epirocQuotationDate);
-    row[COL.GO_AHEAD_TO_REPAIR] = orDate(job.repair?.purchaseOrderDate);
-    row[COL.PLANNED_ASSEMBLY] = orDate(job.repair?.plannedAssemblyDate);
-    row[COL.ACTUAL_ASSEMBLY] = orDate(job.repair?.actualAssemblyDate);
-    row[COL.START] = orDate(job.repair?.repairStartDate);
-    row[COL.END] = orDate(job.repair?.repairCompletionDate);
-    row[COL.OUTWORK] = job.repair?.outworkRequired ?? "";
-    row[COL.SUPPLIER_NAME] = job.repair?.supplierName ?? "";
-    row[COL.DATE_SENT] = orDate(job.repair?.outworkDateSent);
-    row[COL.DATE_RECEIVED_FROM_SUPPLIER] = orDate(job.repair?.outworkDateReceived);
-    row[COL.WAITING_FOR_GO_AHEAD] = job.repair?.waitingForGoAhead === true ? "YES" : job.repair?.waitingForGoAhead === false ? "NO" : "";
-    row[COL.DISPATCH_REQUEST_DATE] = orDate(job.dispatch?.dispatchRequestDate);
-    row[COL.ACTUAL_DISPATCH_DATE] = orDate(job.dispatch?.dispatchDate);
-    row[COL.PLANNED_JOB_CLOSING] = orDate(job.invoice?.plannedClosingDate);
-    row[COL.ACTUAL_JOB_CLOSING] = orDate(job.invoice?.closingDate);
-    row[COL.ORDER_VALUE] = job.poValue;
-    row[COL.REMARKS] = job.invoice?.comments ?? "";
-    row[COL.COMMENT] = job.comments ?? "";
-
-    row[COL.ASSESSMENT_DAYS] = daysBetween(job.jobCreatedDate, job.quotation?.epirocQuotationDate);
-    row[COL.ASSEMBLY_DAYS] = daysBetween(job.repair?.purchaseOrderDate, job.repair?.repairCompletionDate);
-    row[COL.TOTAL_DAYS_WIP] = daysBetween(job.jobCreatedDate, job.invoice?.closingDate ?? new Date());
-    row[COL.STATUS] = job.invoice?.closingDate ? "CLOSED" : "";
-
-    COMPUTED_DAY_COLUMNS.forEach((idx) => {
-      if (row[idx] === "" || row[idx] === undefined) row[idx] = "";
-    });
-
-    return row;
-  });
-
-  const worksheet = XLSX.utils.aoa_to_sheet([groupRow, fieldRow, ...dataRows]);
-
-  // Give every date cell a real date number format (aoa_to_sheet already types them 'd' since
-  // they're JS Date objects, but pins the display format so it's consistent across columns/rows).
-  const dataStartRow = 2; // 0-indexed: row 0 = group header, row 1 = field header
-  for (let r = dataStartRow; r < dataStartRow + dataRows.length; r++) {
-    for (const col of DATE_COLUMNS) {
-      const addr = XLSX.utils.encode_cell({ r, c: col });
-      const cell = worksheet[addr];
-      if (cell && cell.t === "d") cell.z = "yyyy-mm-dd";
-    }
-    const orderValueAddr = XLSX.utils.encode_cell({ r, c: COL.ORDER_VALUE });
-    const orderValueCell = worksheet[orderValueAddr];
-    if (orderValueCell && orderValueCell.t === "n") orderValueCell.z = "#,##0.00";
-  }
-
-  // Column widths, sized per-column so the sheet is readable without a manual resize.
-  worksheet["!cols"] = HEADERS.map((_, idx) => ({ wch: widthFor(idx) }));
-
-  // Merge each section's group-header label across the columns it spans, matching the original
-  // "RECEIVING: / ASSESMENT: / ASSEMBLING: / DISPATCH & CLOSING:" banner row.
-  const sortedGroups = [...GROUP_HEADERS].sort((a, b) => a.col - b.col);
-  worksheet["!merges"] = sortedGroups.map((group, idx) => {
-    const endCol = idx + 1 < sortedGroups.length ? sortedGroups[idx + 1].col - 1 : HEADERS.length - 1;
-    return { s: { r: 0, c: group.col }, e: { r: 0, c: endCol } };
-  });
-
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, SCHEDULER_SHEET_NAME);
-
-  const arrayBuffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx", cellDates: true });
-  return arrayBuffer as Buffer;
-}
+// The branded export lives in its own module; re-exported so existing imports keep working.
+export { exportSchedulerWorkbook } from "./scheduler.export";

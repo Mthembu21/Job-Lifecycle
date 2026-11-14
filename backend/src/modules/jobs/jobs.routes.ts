@@ -7,6 +7,8 @@ import { authenticate } from "../../middleware/auth";
 import { requireRole } from "../../middleware/rbac";
 import { writeAuditLog, diffSummary } from "../../lib/audit";
 import { jobListInclude, toJobDto } from "./jobs.dto";
+import { ensureForecastsFrozen, MONTH_KEY_RE } from "../../lib/forecast";
+import { isNonInvoicedJobType } from "../../lib/jobTypes";
 
 const router = Router();
 
@@ -31,13 +33,21 @@ const updateJobSchema = z
     poNumber: z.string().min(1).optional(),
     woNumberSetAt: z.coerce.date().optional(),
     jobCreatedDate: z.coerce.date().optional(),
+    // Service type — decides whether the job is invoiced or closed without invoice (internal / warranty).
+    jobType: z.enum(["WARRANTY", "CUSTOMER_REPAIR", "INTERNAL", "SERVICE", "REBUILD", "INSURANCE", "OTHER"]).optional(),
+    // Invoice forecast (planner / admin only). null clears it.
+    forecastMonth: z.string().regex(MONTH_KEY_RE, "Forecast month must be YYYY-MM").nullable().optional(),
+    forecastAmount: z.number().nonnegative().nullable().optional(),
   })
   .refine(
     (data) =>
       data.woNumber !== undefined ||
       data.poNumber !== undefined ||
       data.woNumberSetAt !== undefined ||
-      data.jobCreatedDate !== undefined,
+      data.jobCreatedDate !== undefined ||
+      data.jobType !== undefined ||
+      data.forecastMonth !== undefined ||
+      data.forecastAmount !== undefined,
     {
       message: "At least one field must be provided",
     }
@@ -108,7 +118,7 @@ router.get(
       orderBy: { referenceNumber: "asc" },
     });
 
-    let dtos = jobs.map(toJobDto);
+    let dtos = jobs.map((job) => toJobDto(job));
 
     if (stage) dtos = dtos.filter((j) => j.status.currentStage === stage);
     if (status) dtos = dtos.filter((j) => j.status.currentStatus === status);
@@ -140,6 +150,36 @@ router.patch(
 
     const data = updateJobSchema.parse(req.body);
 
+    // Changing the service type between invoiced and not-invoiced (internal / warranty) changes how
+    // the job closes, so keep the invoice record and forecast consistent with it.
+    const typeChanged = data.jobType !== undefined && data.jobType !== job.jobType;
+    const becomesNonInvoiced = typeChanged && isNonInvoicedJobType(data.jobType!);
+    if (typeChanged) {
+      const invoice = await prisma.invoice.findUnique({ where: { jobId: job.id } });
+      if (invoice?.invoiceDate && becomesNonInvoiced) {
+        throw new HttpError(
+          400,
+          "This job has already been invoiced. Remove the invoice first if it should be an internal or warranty job."
+        );
+      }
+      if (invoice && !invoice.invoiceDate) {
+        // A closing date with no invoice closes the job only for internal / warranty types.
+        await prisma.invoice.update({ where: { jobId: job.id }, data: { closedWithoutInvoice: becomesNonInvoiced } });
+      }
+    }
+
+    const touchesForecast = data.forecastMonth !== undefined || data.forecastAmount !== undefined || becomesNonInvoiced;
+    if (data.forecastMonth !== undefined || data.forecastAmount !== undefined) {
+      if (req.user!.role !== "PLANNER" && req.user!.role !== "ADMIN") {
+        throw new HttpError(403, "Only planners can set invoice forecasts");
+      }
+      if (data.forecastMonth && isNonInvoicedJobType(data.jobType ?? job.jobType)) {
+        throw new HttpError(400, "Internal and warranty jobs aren't invoiced, so they can't be forecast");
+      }
+    }
+    // Freeze any month that has started before its forecast can change (see lib/forecast.ts).
+    if (touchesForecast) await ensureForecastsFrozen();
+
     if (data.woNumberSetAt !== undefined) {
       if (!job.woNumber && !data.woNumber) {
         throw new HttpError(400, "A WO number must be set before its date can be edited");
@@ -169,6 +209,9 @@ router.patch(
       poNumber: job.poNumber,
       woNumberSetAt: job.woNumberSetAt,
       jobCreatedDate: job.jobCreatedDate,
+      jobType: job.jobType,
+      forecastMonth: job.forecastMonth,
+      forecastAmount: job.forecastAmount,
     };
 
     const updated = await prisma.job.update({
@@ -181,6 +224,11 @@ router.patch(
         ...(data.woNumberSetAt !== undefined && { woNumberSetAt: data.woNumberSetAt }),
         ...(data.poNumber !== undefined && { poNumber: data.poNumber }),
         ...(data.jobCreatedDate !== undefined && { jobCreatedDate: data.jobCreatedDate }),
+        ...(data.forecastMonth !== undefined && { forecastMonth: data.forecastMonth }),
+        ...(data.forecastAmount !== undefined && { forecastAmount: data.forecastAmount }),
+        ...(data.jobType !== undefined && { jobType: data.jobType }),
+        // Internal / warranty jobs are never invoiced, so they can't be part of an invoice forecast.
+        ...(becomesNonInvoiced && { forecastMonth: null, forecastAmount: null }),
       },
       include: jobListInclude,
     });
@@ -195,6 +243,8 @@ router.patch(
         // Only log the date when it was edited by hand, not when auto-stamped with a new WO number.
         ...(data.woNumberSetAt !== undefined && { woNumberSetAt: updated.woNumberSetAt }),
         ...(data.jobCreatedDate !== undefined && { jobCreatedDate: updated.jobCreatedDate }),
+        ...(touchesForecast && { forecastMonth: updated.forecastMonth, forecastAmount: updated.forecastAmount }),
+        ...(typeChanged && { jobType: updated.jobType }),
       }),
       changedById: req.user!.sub,
     });
@@ -214,6 +264,8 @@ router.delete(
   asyncHandler(async (req, res) => {
     const { ids } = bulkDeleteSchema.parse(req.body);
 
+    // Capture the forecast of any month that has started before its jobs disappear.
+    await ensureForecastsFrozen();
     const { count } = await prisma.job.deleteMany({ where: { id: { in: ids } } });
 
     res.json({ deletedCount: count });
@@ -228,6 +280,7 @@ router.delete(
     const job = await prisma.job.findUnique({ where: { id: req.params.id } });
     if (!job) throw new HttpError(404, "Job not found");
 
+    await ensureForecastsFrozen();
     await prisma.job.delete({ where: { id: job.id } });
 
     res.status(204).send();

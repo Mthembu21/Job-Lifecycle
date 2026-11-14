@@ -1,4 +1,4 @@
-import { JobType } from "@prisma/client";
+import { JobType, Priority } from "@prisma/client";
 
 export const SCHEDULER_SHEET_NAME = "SCHEDULER 2025";
 export const GROUP_HEADER_ROW = 0;
@@ -110,6 +110,7 @@ export const COMPUTED_DAY_COLUMNS = new Set<number>([
   COL.ASSESSMENT_DAYS,
   COL.STRIP_QUOTE_DAYS,
   COL.ASSEMBLY_DAYS,
+  COL.OUT_WORK,
   COL.ASSEMBLING_DAYS,
   COL.TOTAL_DAYS_WIP,
   COL.TOTAL_DAYS_COMP,
@@ -195,14 +196,33 @@ export interface MappedSchedulerRow {
     poValue: number;
     jobCreatedDate: Date;
     comments?: string;
+    // App-only columns (see scheduler.extras.ts)
+    woNumber?: string;
+    woNumberSetAt?: Date;
+    poNumber?: string;
+    priority?: Priority;
+    forecastMonth?: string;
+    forecastAmount?: number;
   };
   quotation?: {
     mcoNumber?: string;
     epirocQuotationDate?: Date;
     evaluationDate?: Date;
     plannedDisassemblyDate?: Date;
+    quotationAmount?: number;
+    comments?: string;
+    delayReason?: string;
+    /** Resolved to a user id on import; dropped if no user has that name. */
+    quotedByName?: string;
   };
   repair?: {
+    purchaseOrderNumber?: string;
+    technicianName?: string;
+    labourHours?: number;
+    partsCost?: number;
+    totalRepairCost?: number;
+    comments?: string;
+    delayReason?: string;
     purchaseOrderDate?: Date;
     plannedAssemblyDate?: Date;
     actualAssemblyDate?: Date;
@@ -217,11 +237,22 @@ export interface MappedSchedulerRow {
   dispatch?: {
     dispatchRequestDate?: Date;
     dispatchDate?: Date;
+    courier?: string;
+    trackingNumber?: string;
+    comments?: string;
+    delayReason?: string;
+    /** Resolved to a user id on import; dropped if no user has that name. */
+    dispatchedByName?: string;
   };
   invoice?: {
     plannedClosingDate?: Date;
     closingDate?: Date;
     comments?: string;
+    invoiceNumber?: string;
+    invoiceDate?: Date;
+    invoiceAmount?: number;
+    delayReason?: string;
+    closedWithoutInvoice?: boolean;
   };
   legacySheetRow: Record<string, string | number | null>;
 }

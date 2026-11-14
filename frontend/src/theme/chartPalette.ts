@@ -1,35 +1,34 @@
+import { EPIROC_GRAY, EPIROC_YELLOW, STATUS_DANGER, STATUS_SUCCESS } from "./epirocBrand";
+
 export type ThemeMode = "light" | "dark";
 
 /**
- * Chart-only color tokens, validated with the dataviz skill's palette validator
- * (worst adjacent CVD ΔE 24.2 light / 10.3 dark). Fixed slot order is the
- * CVD-safety mechanism — never reassign or cycle these per filter/selection.
+ * Chart series colors, Epiroc palette only. Slot 0 is Epiroc yellow, slot 1 a
+ * strong gray, slot 2 a lighter gray (used for "target"/reference series).
+ * Fixed slot order — never reassign per filter/selection.
  */
 const CATEGORICAL: Record<ThemeMode, string[]> = {
-  light: ["#2a78d6", "#1baf7a", "#eda100", "#008300", "#4a3aa7", "#e34948", "#e87ba4", "#eb6834"],
-  dark: ["#3987e5", "#199e70", "#c98500", "#008300", "#9085e9", "#e66767", "#d55181", "#d95926"],
+  light: [EPIROC_YELLOW, EPIROC_GRAY[700], EPIROC_GRAY[400]],
+  dark: [EPIROC_YELLOW, EPIROC_GRAY[300], EPIROC_GRAY[500]],
 };
 
 /** Reserved for SLA/status state only — never reused as a categorical series color. */
-const STATUS: Record<ThemeMode, { good: string; warning: string; critical: string }> = {
-  light: { good: "#0ca30c", warning: "#fab219", critical: "#d03b3b" },
-  dark: { good: "#0ca30c", warning: "#fab219", critical: "#d03b3b" },
-};
+const STATUS = { good: STATUS_SUCCESS, warning: EPIROC_YELLOW, critical: STATUS_DANGER };
 
-/** Single-hue sequential ramp (blue), light -> dark, for magnitude encodings. */
-const SEQUENTIAL_BLUE: Record<ThemeMode, string[]> = {
-  light: ["#cde2fb", "#9ec5f4", "#5598e7", "#2a78d6", "#184f95"],
-  dark: ["#cde2fb", "#6da7ec", "#3987e5", "#1c5cab", "#0d366b"],
+/** Axis, grid and label colors per mode. */
+const CHROME: Record<ThemeMode, { axis: string; grid: string; text: string; tooltipBg: string; tooltipBorder: string }> = {
+  light: { axis: EPIROC_GRAY[300], grid: EPIROC_GRAY[200], text: EPIROC_GRAY[600], tooltipBg: "#FFFFFF", tooltipBorder: EPIROC_GRAY[200] },
+  dark: { axis: EPIROC_GRAY[600], grid: EPIROC_GRAY[800], text: EPIROC_GRAY[300], tooltipBg: EPIROC_GRAY[900], tooltipBorder: EPIROC_GRAY[700] },
 };
 
 export function getCategoricalPalette(mode: ThemeMode): string[] {
   return CATEGORICAL[mode];
 }
 
-export function getStatusPalette(mode: ThemeMode) {
-  return STATUS[mode];
+export function getStatusPalette(_mode?: ThemeMode) {
+  return STATUS;
 }
 
-export function getSequentialBluePalette(mode: ThemeMode): string[] {
-  return SEQUENTIAL_BLUE[mode];
+export function getChartChrome(mode: ThemeMode) {
+  return CHROME[mode];
 }

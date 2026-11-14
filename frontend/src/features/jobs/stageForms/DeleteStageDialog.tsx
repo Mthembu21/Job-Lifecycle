@@ -1,14 +1,6 @@
 import { useState } from "react";
-import {
-  Alert,
-  Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogContentText,
-  DialogTitle,
-} from "@mui/material";
 import { useDeleteStage, StageKey } from "../../../api/jobs";
+import { ConfirmDeleteDialog } from "../../../components/ConfirmDeleteDialog";
 
 const STAGE_LABEL: Record<StageKey, string> = {
   quotation: "Quotation",
@@ -40,26 +32,14 @@ export function DeleteStageDialog({
   }
 
   return (
-    <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Delete {STAGE_LABEL[stage]}</DialogTitle>
-      <DialogContent>
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        )}
-        <DialogContentText>
-          Delete the {STAGE_LABEL[stage].toLowerCase()} details for this job? This cannot be undone.
-        </DialogContentText>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose} disabled={deleteStage.isPending}>
-          Cancel
-        </Button>
-        <Button color="error" variant="contained" onClick={handleDelete} disabled={deleteStage.isPending}>
-          {deleteStage.isPending ? "Deleting..." : "Delete"}
-        </Button>
-      </DialogActions>
-    </Dialog>
+    <ConfirmDeleteDialog
+      title={`Delete ${STAGE_LABEL[stage]}`}
+      error={error}
+      pending={deleteStage.isPending}
+      onConfirm={handleDelete}
+      onClose={onClose}
+    >
+      Delete the {STAGE_LABEL[stage].toLowerCase()} details for this job? This cannot be undone.
+    </ConfirmDeleteDialog>
   );
 }

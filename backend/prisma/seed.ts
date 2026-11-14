@@ -11,7 +11,7 @@ async function main() {
 
   const usersByRole: Record<Role, { name: string; email: string }> = {
     STOREMAN: { name: "Storeman", email: "storeman@demo.local" },
-    PLANNER: { name: "Priya Planner", email: "planner@demo.local" },
+    PLANNER: { name: "Component Planner", email: "planner@demo.local" },
     SUPERVISOR: { name: "Sam Supervisor", email: "supervisor@demo.local" },
     ADMIN: { name: "Alex Admin", email: "admin@demo.local" },
   };

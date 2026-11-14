@@ -1,8 +1,9 @@
 import { Controller, useForm } from "react-hook-form";
-import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Grid, TextField } from "@mui/material";
 import { Job } from "../../../types";
 import { toDateInputValue } from "../../../utils/date";
 import { useStageSubmit } from "../useStageSubmit";
+import { TextField } from "../../../components/ui";
+import { DelayReasonField, StageFormDialog } from "./StageFormDialog";
 
 interface FormValues {
   dispatchRequestDate: string;
@@ -38,96 +39,43 @@ export function DispatchDialog({ job, onClose }: { job: Job; onClose: () => void
   const repairNotDone = !job.repair?.repairCompletionDate;
 
   return (
-    <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Dispatch Stage — {job.referenceNumber}</DialogTitle>
-      <DialogContent>
-        <Grid container spacing={2} sx={{ mt: 0.5 }}>
-          {repairNotDone && (
-            <Grid item xs={12}>
-              <Alert severity="warning">Repair has not been marked complete yet — dispatch cannot be saved until it is.</Alert>
-            </Grid>
-          )}
-          {error && (
-            <Grid item xs={12}>
-              <Alert severity="error">{error}</Alert>
-            </Grid>
-          )}
-          <Grid item xs={12} sm={6}>
-            <Controller
-              name="dispatchRequestDate"
-              control={control}
-              render={({ field }) => (
-                <TextField
-                  {...field}
-                  type="date"
-                  label="Dispatch Request Date"
-                  fullWidth
-                  InputLabelProps={{ shrink: true }}
-                />
-              )}
-            />
-          </Grid>
-          <Grid item xs={12} sm={6}>
-            <Controller
-              name="dispatchDate"
-              control={control}
-              render={({ field }) => (
-                <TextField {...field} type="date" label="Actual Dispatch Date" fullWidth InputLabelProps={{ shrink: true }} />
-              )}
-            />
-          </Grid>
-          <Grid item xs={12} sm={6}>
-            <Controller
-              name="courier"
-              control={control}
-              render={({ field }) => <TextField {...field} label="Courier" fullWidth />}
-            />
-          </Grid>
-          <Grid item xs={12}>
-            <Controller
-              name="trackingNumber"
-              control={control}
-              render={({ field }) => <TextField {...field} label="Tracking Number" fullWidth />}
-            />
-          </Grid>
-          <Grid item xs={12}>
-            <Controller
-              name="comments"
-              control={control}
-              render={({ field }) => <TextField {...field} label="Comments" fullWidth multiline minRows={2} />}
-            />
-          </Grid>
-          <Grid item xs={12}>
-            <Controller
-              name="delayReason"
-              control={control}
-              rules={{ required: requireDelayReason }}
-              render={({ field, fieldState }) => (
-                <TextField
-                  {...field}
-                  label="Delay Reason"
-                  fullWidth
-                  multiline
-                  minRows={2}
-                  required={requireDelayReason}
-                  error={!!fieldState.error}
-                  helperText={
-                    requireDelayReason
-                      ? "Required: dispatch has exceeded the 2-day SLA target"
-                      : "Only required if the dispatch SLA has been exceeded"
-                  }
-                />
-              )}
-            />
-          </Grid>
-        </Grid>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
-        <Button variant="contained" onClick={handleSubmit(onSubmit)} disabled={submitting || repairNotDone}>
-          {submitting ? "Saving..." : "Save"}
-        </Button>
-      </DialogActions>
-    </Dialog>
+    <StageFormDialog
+      title={`Dispatch Stage — ${job.referenceNumber}`}
+      error={error}
+      warning={repairNotDone ? "Repair has not been marked complete yet — dispatch cannot be saved until it is." : null}
+      submitting={submitting}
+      saveDisabled={repairNotDone}
+      onSave={handleSubmit(onSubmit)}
+      onClose={onClose}
+    >
+      <Controller
+        name="dispatchRequestDate"
+        control={control}
+        render={({ field }) => <TextField {...field} type="date" label="Dispatch Request Date" />}
+      />
+      <Controller
+        name="dispatchDate"
+        control={control}
+        render={({ field }) => <TextField {...field} type="date" label="Actual Dispatch Date" />}
+      />
+      <Controller name="courier" control={control} render={({ field }) => <TextField {...field} label="Courier" />} />
+      <Controller
+        name="trackingNumber"
+        control={control}
+        render={({ field }) => <TextField {...field} label="Tracking Number" />}
+      />
+      <Controller
+        name="comments"
+        control={control}
+        render={({ field }) => <TextField {...field} label="Comments" multiline className="sm:col-span-2" />}
+      />
+      <DelayReasonField
+        control={control}
+        name="delayReason"
+        required={requireDelayReason}
+        requiredText="Required: dispatch has exceeded the 2-day SLA target"
+        optionalText="Only required if the dispatch SLA has been exceeded"
+      />
+    </StageFormDialog>
   );
 }

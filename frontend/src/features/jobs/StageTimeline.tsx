@@ -1,22 +1,14 @@
-import {
-  Box,
-  IconButton,
-  Step,
-  StepContent,
-  StepLabel,
-  Stepper,
-  Stack,
-  Typography,
-} from "@mui/material";
-import EditIcon from "@mui/icons-material/Edit";
-import DeleteIcon from "@mui/icons-material/Delete";
+import { Check, Pencil, Trash2 } from "lucide-react";
 import { Job, StageName } from "../../types";
 import { SlaChip } from "../common/SlaChip";
 import { StageStatusChip } from "../common/StageStatusChip";
 import { formatDate } from "../../utils/date";
+import { JOB_TYPE_LABELS, ROLE_LABELS } from "../../constants";
+import { isNonInvoicedJobType } from "../../utils/jobTypes";
 import { useAuth } from "../../auth/AuthContext";
 import { canEditStage } from "../../auth/permissions";
 import { StageKey } from "../../api/jobs";
+import { IconButton, cn } from "../../components/ui";
 
 interface StepDef {
   key: StageName;
@@ -81,11 +73,15 @@ export function StageTimeline({
     },
     {
       key: "INVOICING",
-      label: "Invoice",
+      label: isNonInvoicedJobType(job.jobType) ? "Close Job (no invoice)" : "Invoice",
       editStage: "invoice",
       hasData: Boolean(job.invoice),
-      completedDate: job.invoice?.invoiceDate,
-      responsible: job.invoice?.invoiceNumber ? "Planner" : null,
+      completedDate: job.invoice?.invoiceDate ?? (job.status.closedWithoutInvoice ? job.invoice?.closingDate : null),
+      responsible: job.status.closedWithoutInvoice
+        ? `Closed without invoice (${JOB_TYPE_LABELS[job.jobType]})`
+        : job.invoice?.invoiceNumber
+          ? ROLE_LABELS.PLANNER
+          : null,
       comments: job.invoice?.comments,
       delayReason: job.invoice?.delayReason,
     },
@@ -100,7 +96,7 @@ export function StageTimeline({
   ];
 
   // AWAITING_PO has no dedicated visual step here — it's shown inside "Repair" — so
-  // treat it as REPAIR when locating which step the stepper should highlight as active.
+  // treat it as REPAIR when locating which step should be highlighted as active.
   const effectiveStage = job.status.currentStage === "AWAITING_PO" ? "REPAIR" : job.status.currentStage;
   const activeIndex = job.status.isClosed
     ? steps.length - 1
@@ -112,58 +108,83 @@ export function StageTimeline({
   const slaByStage = Object.fromEntries(job.status.stages.map((s) => [s.name, s]));
 
   return (
-    <Stepper activeStep={activeIndex} orientation="vertical">
+    <ol className="relative">
       {steps.map((step, idx) => {
         const computed = idx > 0 && idx < steps.length - 1 ? slaByStage[step.key] : undefined;
-        const isCompleted = idx === 0 || Boolean(step.completedDate) || (idx === steps.length - 1 && job.status.isClosed);
+        const isLast = idx === steps.length - 1;
+        const isCompleted = idx === 0 || Boolean(step.completedDate) || (isLast && job.status.isClosed);
+        const isActive = idx === activeIndex && !(isLast && job.status.isClosed);
+        const canEdit = step.editStage && canEditStage(user?.role, step.editStage);
+
         return (
-          <Step key={`${step.key}-${idx}`} completed={isCompleted}>
-            <StepLabel>
-              <Stack direction="row" alignItems="center" spacing={1}>
-                <Typography fontWeight={600}>{step.label}</Typography>
+          <li key={`${step.key}-${idx}`} className="relative flex gap-4 pb-6 last:pb-0">
+            {!isLast && (
+              <span
+                aria-hidden
+                className={cn(
+                  "absolute top-8 bottom-0 left-[15px] w-0.5",
+                  isCompleted ? "bg-yellow" : "bg-gray-200 dark:bg-gray-700"
+                )}
+              />
+            )}
+            <span
+              className={cn(
+                "relative z-10 flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-bold",
+                isCompleted && "bg-yellow text-gray-900",
+                !isCompleted && isActive && "border-2 border-yellow bg-white text-gray-900 ring-4 ring-yellow/25 dark:bg-gray-900 dark:text-yellow",
+                !isCompleted && !isActive && "border-2 border-gray-300 bg-white text-gray-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-400"
+              )}
+            >
+              {isCompleted ? <Check className="size-4" strokeWidth={3} /> : idx + 1}
+            </span>
+
+            <div
+              className={cn(
+                "min-w-0 flex-1 rounded-lg pt-1",
+                isActive && "-mt-1 bg-gray-50 px-3 py-2 dark:bg-gray-800/60"
+              )}
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="font-semibold text-gray-900 dark:text-gray-50">{step.label}</h3>
                 {computed && <StageStatusChip status={computed.status} />}
-                {idx === steps.length - 1 && job.status.isClosed && <StageStatusChip status="CLOSED" />}
-              </Stack>
-            </StepLabel>
-            <StepContent>
-              <Stack spacing={0.5} sx={{ pb: 1 }}>
-                <Typography variant="body2" color="text.secondary">
+                {isLast && job.status.isClosed && <StageStatusChip status="CLOSED" />}
+                {canEdit && (
+                  <span className="ml-auto flex">
+                    <IconButton size="sm" label={`Edit ${step.label}`} onClick={() => onEdit(step.editStage!)}>
+                      <Pencil />
+                    </IconButton>
+                    {step.hasData && (
+                      <IconButton size="sm" tone="danger" label={`Delete ${step.label}`} onClick={() => onDelete(step.editStage!)}>
+                        <Trash2 />
+                      </IconButton>
+                    )}
+                  </span>
+                )}
+              </div>
+              <div className="mt-1 space-y-1 text-sm">
+                <p className="text-gray-600 dark:text-gray-400">
                   Date: {formatDate(step.completedDate)}
                   {step.responsible ? ` · ${step.responsible}` : ""}
-                </Typography>
+                </p>
                 {computed && (
-                  <Stack direction="row" spacing={1} alignItems="center">
+                  <div className="flex flex-wrap items-center gap-2">
                     <SlaChip status={computed.sla.status} />
-                    <Typography variant="caption" color="text.secondary">
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
                       {computed.sla.days !== null
                         ? `${computed.sla.days} of ${computed.sla.target} target days`
                         : "Not yet applicable"}
-                    </Typography>
-                  </Stack>
+                    </span>
+                  </div>
                 )}
-                {step.comments && <Typography variant="body2">Comments: {step.comments}</Typography>}
+                {step.comments && <p className="text-gray-800 dark:text-gray-200">Comments: {step.comments}</p>}
                 {step.delayReason && (
-                  <Typography variant="body2" color="error.main">
-                    Delay reason: {step.delayReason}
-                  </Typography>
+                  <p className="text-danger dark:text-danger-light">Delay reason: {step.delayReason}</p>
                 )}
-                {step.editStage && canEditStage(user?.role, step.editStage) && (
-                  <Box>
-                    <IconButton size="small" onClick={() => onEdit(step.editStage!)}>
-                      <EditIcon fontSize="small" />
-                    </IconButton>
-                    {step.hasData && (
-                      <IconButton size="small" onClick={() => onDelete(step.editStage!)}>
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
-                    )}
-                  </Box>
-                )}
-              </Stack>
-            </StepContent>
-          </Step>
+              </div>
+            </div>
+          </li>
         );
       })}
-    </Stepper>
+    </ol>
   );
 }

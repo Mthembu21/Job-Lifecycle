@@ -1,23 +1,22 @@
-import { useEffect, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Controller, useForm, useWatch } from "react-hook-form";
-import {
-  Alert,
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Grid,
-  MenuItem,
-  Stack,
-  TextField,
-  Typography,
-} from "@mui/material";
 import { useCreateJob, CreateJobInput } from "../../api/jobs";
 import { JOB_TYPE_LABELS, PRIORITY_LABELS } from "../../constants";
 import { addBusinessDays } from "../../utils/date";
+import { Alert, Button, Card, PageHeader, TextField } from "../../components/ui";
 
 const TODAY = new Date().toISOString().slice(0, 10);
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <fieldset className="border-t border-gray-100 pt-5 first:border-t-0 first:pt-0 dark:border-gray-800">
+      <legend className="sr-only">{title}</legend>
+      <p className="mb-3 text-xs font-bold tracking-wider text-gray-500 uppercase dark:text-gray-400">{title}</p>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-6">{children}</div>
+    </fieldset>
+  );
+}
 
 export function JobCreateForm() {
   const navigate = useNavigate();
@@ -84,238 +83,207 @@ export function JobCreateForm() {
   }
 
   return (
-    <Box maxWidth={800}>
-      <Typography variant="h5" fontWeight={700} sx={{ mb: 2 }}>
-        Create New Job
-      </Typography>
-      <Card variant="outlined">
-        <CardContent component="form" onSubmit={handleSubmit(onSubmit)} sx={{ p: 3 }}>
-          <Stack spacing={2}>
-            {serverError && <Alert severity="error">{serverError}</Alert>}
-            <Grid container spacing={2}>
-              <Grid item xs={12} sm={6}>
-                <Controller
-                  name="referenceNumber"
-                  control={control}
-                  rules={{ required: "Reference number is required" }}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      label="Reference/Div"
-                      fullWidth
-                      required
-                      error={!!errors.referenceNumber}
-                      helperText={errors.referenceNumber?.message}
-                    />
-                  )}
+    <div className="max-w-4xl">
+      <PageHeader title="Create New Job" subtitle="Fields marked * are required" />
+      <Card>
+        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5 p-6">
+          {serverError && <Alert severity="error">{serverError}</Alert>}
+
+          <Section title="Customer & job">
+            <Controller
+              name="referenceNumber"
+              control={control}
+              rules={{ required: "Reference number is required" }}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  className="sm:col-span-3"
+                  label="Reference/Div"
+                  required
+                  error={!!errors.referenceNumber}
+                  helperText={errors.referenceNumber?.message}
                 />
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <Controller
-                  name="customer"
-                  control={control}
-                  rules={{ required: "Customer is required" }}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      label="Customer"
-                      fullWidth
-                      required
-                      error={!!errors.customer}
-                      helperText={errors.customer?.message}
-                    />
-                  )}
+              )}
+            />
+            <Controller
+              name="customer"
+              control={control}
+              rules={{ required: "Customer is required" }}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  className="sm:col-span-3"
+                  label="Customer"
+                  required
+                  error={!!errors.customer}
+                  helperText={errors.customer?.message}
                 />
-              </Grid>
-              <Grid item xs={12}>
-                <Controller
-                  name="description"
-                  control={control}
-                  rules={{ required: "Job description is required" }}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      label="Description"
-                      fullWidth
-                      multiline
-                      minRows={2}
-                      required
-                      error={!!errors.description}
-                      helperText={errors.description?.message}
-                    />
-                  )}
+              )}
+            />
+            <Controller
+              name="description"
+              control={control}
+              rules={{ required: "Job description is required" }}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  className="sm:col-span-6"
+                  label="Description"
+                  multiline
+                  required
+                  error={!!errors.description}
+                  helperText={errors.description?.message}
                 />
-              </Grid>
-              <Grid item xs={12} sm={4}>
-                <Controller
-                  name="serialNumber"
-                  control={control}
-                  rules={{ required: "Serial number is required" }}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      label="Serial Nr"
-                      fullWidth
-                      required
-                      error={!!errors.serialNumber}
-                      helperText={errors.serialNumber?.message}
-                    />
-                  )}
+              )}
+            />
+            <Controller
+              name="customerRef"
+              control={control}
+              render={({ field }) => <TextField {...field} className="sm:col-span-3" label="Customer Ref" />}
+            />
+            <Controller
+              name="customerAccount"
+              control={control}
+              render={({ field }) => <TextField {...field} className="sm:col-span-3" label="Customer Acc" />}
+            />
+          </Section>
+
+          <Section title="Equipment">
+            <Controller
+              name="serialNumber"
+              control={control}
+              rules={{ required: "Serial number is required" }}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  className="sm:col-span-3"
+                  label="Serial Nr"
+                  required
+                  error={!!errors.serialNumber}
+                  helperText={errors.serialNumber?.message}
                 />
-              </Grid>
-              <Grid item xs={12} sm={4}>
-                <Controller
-                  name="partNumber"
-                  control={control}
-                  render={({ field }) => <TextField {...field} label="Part Nr" fullWidth />}
+              )}
+            />
+            <Controller
+              name="partNumber"
+              control={control}
+              render={({ field }) => <TextField {...field} className="sm:col-span-3" label="Part Nr" />}
+            />
+            <Controller
+              name="machineNumber"
+              control={control}
+              render={({ field }) => <TextField {...field} className="sm:col-span-3" label="Machine Nr" />}
+            />
+            <Controller
+              name="machineSerialNumber"
+              control={control}
+              render={({ field }) => <TextField {...field} className="sm:col-span-3" label="Machine Serial Nr" />}
+            />
+          </Section>
+
+          <Section title="Classification & value">
+            <Controller
+              name="jobType"
+              control={control}
+              render={({ field }) => (
+                <TextField {...field} select className="sm:col-span-2" label="Service Type">
+                  {Object.entries(JOB_TYPE_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </TextField>
+              )}
+            />
+            <Controller
+              name="priority"
+              control={control}
+              render={({ field }) => (
+                <TextField {...field} select className="sm:col-span-2" label="Priority">
+                  {Object.entries(PRIORITY_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </TextField>
+              )}
+            />
+            <Controller
+              name="poValue"
+              control={control}
+              rules={{ required: true, min: 0 }}
+              render={({ field }) => (
+                <TextField {...field} className="sm:col-span-2" type="number" min={0} label="Order Value" required />
+              )}
+            />
+            <Controller
+              name="woNumber"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  className="sm:col-span-3"
+                  label="WO Number"
+                  helperText="Leave blank if not yet issued — can be added later from the job's detail page."
                 />
-              </Grid>
-              <Grid item xs={12} sm={4}>
-                <Controller
-                  name="machineNumber"
-                  control={control}
-                  render={({ field }) => <TextField {...field} label="Machine Nr" fullWidth />}
+              )}
+            />
+            <Controller
+              name="poNumber"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  className="sm:col-span-3"
+                  label="PO Number"
+                  helperText="Leave blank if not yet issued — can be added later."
                 />
-              </Grid>
-              <Grid item xs={12} sm={4}>
-                <Controller
-                  name="machineSerialNumber"
-                  control={control}
-                  render={({ field }) => <TextField {...field} label="Machine Serial Nr" fullWidth />}
+              )}
+            />
+          </Section>
+
+          <Section title="Dates & notes">
+            <Controller
+              name="dateReceived"
+              control={control}
+              render={({ field }) => <TextField {...field} className="sm:col-span-3" type="date" label="Date Received" />}
+            />
+            <Controller
+              name="jobCreatedDate"
+              control={control}
+              rules={{ required: "Job created date is required" }}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  className="sm:col-span-3"
+                  onChange={(e) => {
+                    setJobCreatedDateTouched(true);
+                    field.onChange(e);
+                  }}
+                  type="date"
+                  label="Job Opening"
+                  required
+                  helperText="Defaults to 3 business days after Date Received"
                 />
-              </Grid>
-              <Grid item xs={12} sm={4}>
-                <Controller
-                  name="customerRef"
-                  control={control}
-                  render={({ field }) => <TextField {...field} label="Customer Ref" fullWidth />}
-                />
-              </Grid>
-              <Grid item xs={12} sm={4}>
-                <Controller
-                  name="customerAccount"
-                  control={control}
-                  render={({ field }) => <TextField {...field} label="Customer Acc" fullWidth />}
-                />
-              </Grid>
-              <Grid item xs={12} sm={4}>
-                <Controller
-                  name="dateReceived"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField {...field} type="date" label="Date Received" fullWidth InputLabelProps={{ shrink: true }} />
-                  )}
-                />
-              </Grid>
-              <Grid item xs={12} sm={4}>
-                <Controller
-                  name="woNumber"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      label="WO Number"
-                      fullWidth
-                      helperText="Leave blank if not yet issued — can be added later from the job's detail page."
-                    />
-                  )}
-                />
-              </Grid>
-              <Grid item xs={12} sm={3}>
-                <Controller
-                  name="jobType"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField {...field} select label="Service Type" fullWidth>
-                      {Object.entries(JOB_TYPE_LABELS).map(([value, label]) => (
-                        <MenuItem key={value} value={value}>
-                          {label}
-                        </MenuItem>
-                      ))}
-                    </TextField>
-                  )}
-                />
-              </Grid>
-              <Grid item xs={12} sm={3}>
-                <Controller
-                  name="priority"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField {...field} select label="Priority" fullWidth>
-                      {Object.entries(PRIORITY_LABELS).map(([value, label]) => (
-                        <MenuItem key={value} value={value}>
-                          {label}
-                        </MenuItem>
-                      ))}
-                    </TextField>
-                  )}
-                />
-              </Grid>
-              <Grid item xs={12} sm={3}>
-                <Controller
-                  name="poValue"
-                  control={control}
-                  rules={{ required: true, min: 0 }}
-                  render={({ field }) => (
-                    <TextField {...field} type="number" label="Order Value" fullWidth required />
-                  )}
-                />
-              </Grid>
-              <Grid item xs={12} sm={3}>
-                <Controller
-                  name="poNumber"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      label="PO Number"
-                      fullWidth
-                      helperText="Leave blank if not yet issued — can be added later."
-                    />
-                  )}
-                />
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <Controller
-                  name="jobCreatedDate"
-                  control={control}
-                  rules={{ required: "Job created date is required" }}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      onChange={(e) => {
-                        setJobCreatedDateTouched(true);
-                        field.onChange(e);
-                      }}
-                      type="date"
-                      label="Job Opening"
-                      fullWidth
-                      required
-                      InputLabelProps={{ shrink: true }}
-                      helperText="Defaults to 3 business days after Date Received"
-                    />
-                  )}
-                />
-              </Grid>
-              <Grid item xs={12}>
-                <Controller
-                  name="comments"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField {...field} label="Comment" fullWidth multiline minRows={2} />
-                  )}
-                />
-              </Grid>
-            </Grid>
-            <Stack direction="row" spacing={2} justifyContent="flex-end">
-              <Button onClick={() => navigate(-1)}>Cancel</Button>
-              <Button type="submit" variant="contained" disabled={createJob.isPending}>
-                {createJob.isPending ? "Creating..." : "Create Job"}
-              </Button>
-            </Stack>
-          </Stack>
-        </CardContent>
+              )}
+            />
+            <Controller
+              name="comments"
+              control={control}
+              render={({ field }) => <TextField {...field} className="sm:col-span-6" label="Comment" multiline />}
+            />
+          </Section>
+
+          <div className="flex justify-end gap-2 border-t border-gray-100 pt-5 dark:border-gray-800">
+            <Button variant="ghost" onClick={() => navigate(-1)}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" loading={createJob.isPending}>
+              {createJob.isPending ? "Creating…" : "Create Job"}
+            </Button>
+          </div>
+        </form>
       </Card>
-    </Box>
+    </div>
   );
 }

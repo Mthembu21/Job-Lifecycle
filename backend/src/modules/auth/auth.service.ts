@@ -36,7 +36,7 @@ const fallbackUsers: AuthUserLike[] = [
   },
   {
     id: "demo-planner",
-    name: "Priya Planner",
+    name: "Component Planner",
     email: "planner@demo.local",
     role: "PLANNER",
     passwordHash: bcrypt.hashSync(DEMO_PASSWORD, 10),

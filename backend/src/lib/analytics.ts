@@ -1,5 +1,6 @@
 import { JobDto } from "../modules/jobs/jobs.dto";
 import { StageName } from "./statusEngine";
+import { isNonInvoicedJobType } from "./jobTypes";
 
 const JOB_TYPE_LABELS: Record<string, string> = {
   WARRANTY: "Warranty",
@@ -52,8 +53,7 @@ function monthLabel(key: string): string {
   return new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "short", year: "numeric" });
 }
 
-function lastNMonthKeys(n: number): string[] {
-  const now = new Date();
+function lastNMonthKeys(n: number, now: Date = new Date()): string[] {
   const keys: string[] = [];
   for (let i = n - 1; i >= 0; i--) {
     keys.push(monthKey(new Date(now.getFullYear(), now.getMonth() - i, 1)));
@@ -72,8 +72,7 @@ function weekLabel(key: string): string {
   return new Date(key).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function lastNWeekKeys(n: number): string[] {
-  const now = new Date();
+function lastNWeekKeys(n: number, now: Date = new Date()): string[] {
   const keys: string[] = [];
   for (let i = n - 1; i >= 0; i--) {
     const d = new Date(now);
@@ -89,7 +88,37 @@ function countBy<T extends string>(items: T[], order: readonly T[], labels: Reco
   return order.map((key) => ({ label: labels[key], value: counts.get(key) ?? 0 }));
 }
 
-export function buildDashboardSummary(jobs: JobDto[]) {
+/** Value of a job with no invoice amount: PO value, else quotation amount. */
+function noInvoiceValue(j: JobDto): number {
+  return toNumber(j.poValue) || toNumber(j.quotation?.quotationAmount);
+}
+
+/** Count / value of jobs closed without invoice, split into internal and warranty. */
+export function closedWithoutInvoiceKpis(closedNoInvoice: JobDto[]) {
+  const internal = closedNoInvoice.filter((j) => j.jobType === "INTERNAL");
+  const warranty = closedNoInvoice.filter((j) => j.jobType === "WARRANTY");
+  const total = (xs: JobDto[]) => xs.reduce((sum, j) => sum + noInvoiceValue(j), 0);
+  return {
+    closedWithoutInvoiceCount: closedNoInvoice.length,
+    closedWithoutInvoiceValue: total(closedNoInvoice),
+    closedInternalCount: internal.length,
+    closedInternalValue: total(internal),
+    closedWarrantyCount: warranty.length,
+    closedWarrantyValue: total(warranty),
+  };
+}
+
+export interface SummaryOptions {
+  /** End of the trend windows (default: now). The month view anchors trends to the selected month. */
+  anchor?: Date;
+  /** Explicit week buckets (Monday ISO dates); default is the 12 weeks up to `anchor`. */
+  weekKeys?: string[];
+}
+
+export { monthKey, weekKey };
+
+export function buildDashboardSummary(jobs: JobDto[], opts: SummaryOptions = {}) {
+  const anchor = opts.anchor ?? new Date();
   const openJobs = jobs.filter((j) => !j.status.isClosed);
   const closedJobs = jobs.filter((j) => j.status.isClosed);
   const delayedJobs = jobs.filter((j) => j.status.currentStatus === "DELAYED");
@@ -110,6 +139,14 @@ export function buildDashboardSummary(jobs: JobDto[]) {
     readyForDispatch: jobs.filter((j) => j.status.currentStage === "DISPATCH").length,
     awaitingInvoice: jobs.filter((j) => j.status.currentStage === "INVOICING").length,
     closedJobs: closedJobs.length,
+    jobsInvoiced: jobs.filter((j) => j.invoice?.invoiceDate).length,
+    // Internal / warranty jobs closed with no invoice — valued at PO value, else quotation amount.
+    ...closedWithoutInvoiceKpis(closedJobs.filter((j) => j.status.closedWithoutInvoice)),
+    // Open internal / warranty work (part of the open job value, but never invoiced).
+    openNonInvoicedCount: openJobs.filter((j) => isNonInvoicedJobType(j.jobType)).length,
+    openNonInvoicedValue: openJobs
+      .filter((j) => isNonInvoicedJobType(j.jobType))
+      .reduce((sum, j) => sum + toNumber(j.poValue), 0),
     delayedJobs: delayedJobs.length,
     totalOpenJobValue,
     totalInvoicedValue,
@@ -163,8 +200,8 @@ export function buildDashboardSummary(jobs: JobDto[]) {
     { label: "Invoiced Value", value: totalInvoicedValue },
   ];
 
-  const monthKeys = lastNMonthKeys(12);
-  const weekKeys = lastNWeekKeys(12);
+  const monthKeys = lastNMonthKeys(12, anchor);
+  const weekKeys = opts.weekKeys ?? lastNWeekKeys(12, anchor);
 
   const jobsCreatedByMonth: Bucket[] = monthKeys.map((key) => ({
     label: monthLabel(key),
@@ -216,7 +253,7 @@ export function buildDashboardSummary(jobs: JobDto[]) {
     outsideSla: quotationStats.filter((s) => s!.sla.status === "RED").length,
   };
 
-  const complianceMonthKeys = lastNMonthKeys(6);
+  const complianceMonthKeys = lastNMonthKeys(6, anchor);
   const slaComplianceTrend = complianceMonthKeys.map((key) => {
     const bucketJobs = jobs.filter((j) => monthKey(new Date(j.jobCreatedDate)) === key);
     const percent =

@@ -22,6 +22,11 @@ export function canEditJobFields(role: Role | undefined): boolean {
   return role === "STOREMAN" || role === "PLANNER" || role === "ADMIN";
 }
 
+/** Invoice forecasts (and their outcome comments) are owned by planners. */
+export function canEditForecast(role: Role | undefined): boolean {
+  return role === "PLANNER" || role === "ADMIN";
+}
+
 export function canDeleteJob(role: Role | undefined): boolean {
   return role === "STOREMAN" || role === "ADMIN";
 }

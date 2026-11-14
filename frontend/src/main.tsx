@@ -1,5 +1,8 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+// Inter is bundled with the app (not loaded from the internet, not relying on what the device has
+// installed) so every screen — including the meeting-room TV — renders the same font.
+import "@fontsource-variable/inter";
 import "./index.css";
 import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

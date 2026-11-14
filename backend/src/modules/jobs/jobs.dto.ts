@@ -1,10 +1,11 @@
 import { Prisma } from "@prisma/client";
 import { deriveJobStatus } from "../../lib/statusEngine";
 
-type JobWithListRelations = Prisma.JobGetPayload<{ include: typeof jobListInclude }>;
+export type JobWithListRelations = Prisma.JobGetPayload<{ include: typeof jobListInclude }>;
 
-export function toJobDto(job: JobWithListRelations) {
-  const derived = deriveJobStatus(job);
+/** `asOf` reconstructs the status at a past date (dashboard month view); omitted = now. */
+export function toJobDto(job: JobWithListRelations, asOf?: Date) {
+  const derived = deriveJobStatus(job, asOf);
   return {
     id: job.id,
     referenceNumber: job.referenceNumber,
@@ -25,6 +26,8 @@ export function toJobDto(job: JobWithListRelations) {
     priority: job.priority,
     jobCreatedDate: job.jobCreatedDate,
     comments: job.comments,
+    forecastMonth: job.forecastMonth,
+    forecastAmount: job.forecastAmount,
     isLegacyImport: job.isLegacyImport,
     createdBy: job.createdBy ? { id: job.createdBy.id, name: job.createdBy.name } : null,
     quotation: job.quotation

@@ -32,6 +32,8 @@ export interface DerivedJobStatus {
   slaCompliant: boolean;
   stages: StageComputed[];
   isClosed: boolean;
+  /** Closed with no invoice (internal job). */
+  closedWithoutInvoice: boolean;
 }
 
 function computeStageStatus(started: boolean, completed: boolean, sla: SlaResult): StageStatus {
@@ -40,10 +42,15 @@ function computeStageStatus(started: boolean, completed: boolean, sla: SlaResult
   return sla.status === "RED" ? "DELAYED" : "IN_PROGRESS";
 }
 
-export function deriveJobStatus(job: JobWithRelations): DerivedJobStatus {
+/**
+ * Derives a job's stage/status from its dates. `asOf` (default: now) is the "today" used for stages
+ * still in progress — the dashboard passes a month-end date, together with a copy of the job whose
+ * later dates are hidden (see jobAsOf in lib/asOf.ts), to reconstruct the status at that point.
+ */
+export function deriveJobStatus(job: JobWithRelations, asOf: Date = new Date()): DerivedJobStatus {
   const { quotation, repair, dispatch, invoice } = job;
 
-  const quotationSlaResult = quotationSla(job.jobCreatedDate, quotation?.epirocQuotationDate);
+  const quotationSlaResult = quotationSla(job.jobCreatedDate, quotation?.epirocQuotationDate, asOf);
   const quotationCompleted = Boolean(quotation?.epirocQuotationDate);
   const quotationStage: StageComputed = {
     name: "QUOTATION",
@@ -51,7 +58,7 @@ export function deriveJobStatus(job: JobWithRelations): DerivedJobStatus {
     sla: quotationSlaResult,
   };
 
-  const poSlaResult = poSla(quotation?.epirocQuotationDate, repair?.purchaseOrderDate);
+  const poSlaResult = poSla(quotation?.epirocQuotationDate, repair?.purchaseOrderDate, asOf);
   const poCompleted = Boolean(repair?.purchaseOrderDate);
   const awaitingPoStage: StageComputed = {
     name: "AWAITING_PO",
@@ -59,7 +66,7 @@ export function deriveJobStatus(job: JobWithRelations): DerivedJobStatus {
     sla: poSlaResult,
   };
 
-  const repairSlaResult = repairSla(repair?.purchaseOrderDate, repair?.repairCompletionDate);
+  const repairSlaResult = repairSla(repair?.purchaseOrderDate, repair?.repairCompletionDate, asOf);
   const repairCompleted = Boolean(repair?.repairCompletionDate);
   const repairStage: StageComputed = {
     name: "REPAIR",
@@ -67,7 +74,7 @@ export function deriveJobStatus(job: JobWithRelations): DerivedJobStatus {
     sla: repairSlaResult,
   };
 
-  const dispatchSlaResult = dispatchSla(repair?.repairCompletionDate, dispatch?.dispatchDate);
+  const dispatchSlaResult = dispatchSla(repair?.repairCompletionDate, dispatch?.dispatchDate, asOf);
   const dispatchCompleted = Boolean(dispatch?.dispatchDate);
   const dispatchStage: StageComputed = {
     name: "DISPATCH",
@@ -75,8 +82,11 @@ export function deriveJobStatus(job: JobWithRelations): DerivedJobStatus {
     sla: dispatchSlaResult,
   };
 
-  const invoiceSlaResult = invoiceSla(dispatch?.dispatchDate, invoice?.invoiceDate);
-  const invoiceCompleted = Boolean(invoice?.invoiceDate);
+  // Internal jobs can be closed with no invoice: the closing date then completes the invoicing stage.
+  const closedWithoutInvoice = Boolean(invoice?.closedWithoutInvoice && invoice?.closingDate && !invoice?.invoiceDate);
+  const invoiceDoneDate = invoice?.invoiceDate ?? (closedWithoutInvoice ? invoice?.closingDate : null);
+  const invoiceSlaResult = invoiceSla(dispatch?.dispatchDate, invoiceDoneDate, asOf);
+  const invoiceCompleted = Boolean(invoiceDoneDate);
   const invoicingStage: StageComputed = {
     name: "INVOICING",
     status: computeStageStatus(dispatchCompleted, invoiceCompleted, invoiceSlaResult),
@@ -96,7 +106,7 @@ export function deriveJobStatus(job: JobWithRelations): DerivedJobStatus {
   const currentStageComputed = stages.find((s) => s.name === currentStage);
   const daysInCurrentStage = isClosed ? null : currentStageComputed?.sla.days ?? null;
 
-  const endDate = invoice?.closingDate ?? invoice?.invoiceDate ?? new Date();
+  const endDate = invoice?.closingDate ?? invoice?.invoiceDate ?? asOf;
   const totalJobAge = daysBetween(job.jobCreatedDate, endDate);
 
   const slaCompliant = stages.every((s) => s.sla.status !== "RED");
@@ -109,5 +119,6 @@ export function deriveJobStatus(job: JobWithRelations): DerivedJobStatus {
     slaCompliant,
     stages,
     isClosed,
+    closedWithoutInvoice,
   };
 }
