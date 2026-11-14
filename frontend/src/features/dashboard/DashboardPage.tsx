@@ -100,13 +100,13 @@ export function DashboardPage() {
       </PageHeader>
 
       <SectionHeading>{periodName} activity</SectionHeading>
-      <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-9">
+      {/* Tiles size to their content (amounts never cut off) and share the leftover space. */}
+      <div className="mb-8 flex flex-wrap gap-3 *:min-w-40 *:flex-[1_1_auto]">
         <StatTile label="Jobs Received" value={kpis.totalJobsCreated} icon={Briefcase} />
         <StatTile label="Jobs Invoiced" value={kpis.jobsInvoiced} icon={ReceiptText} />
-        <StatTile wide label="Invoiced Value" value={currency(kpis.totalInvoicedValue)} icon={Wallet} />
+        <StatTile label="Invoiced Value" value={currency(kpis.totalInvoicedValue)} icon={Wallet} />
         <StatTile label="Jobs Closed" value={kpis.closedJobs} icon={CheckCircle2} />
         <StatTile
-          wide
           label="Closed Without Invoice"
           value={currency(kpis.closedWithoutInvoiceValue)}
           sub={`${kpis.closedInternalCount} internal · ${kpis.closedWarrantyCount} warranty`}
@@ -117,7 +117,7 @@ export function DashboardPage() {
       </div>
 
       <SectionHeading>Pipeline {asOfLabel}</SectionHeading>
-      <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-9">
+      <div className="mb-8 flex flex-wrap gap-3 *:min-w-40 *:flex-[1_1_auto]">
         <StatTile label="Waiting for Quotation" value={kpis.waitingForQuotation} icon={FileText} />
         <StatTile label="Waiting for PO" value={kpis.waitingForPO} icon={Hourglass} />
         <StatTile label="Jobs in Repair" value={kpis.inRepair} icon={Wrench} />
@@ -129,7 +129,7 @@ export function DashboardPage() {
           icon={AlertTriangle}
           tone={kpis.delayedJobs > 0 ? "critical" : "default"}
         />
-        <StatTile wide label="Open Job Value" value={currency(kpis.totalOpenJobValue)} icon={Banknote} />
+        <StatTile label="Open Job Value" value={currency(kpis.totalOpenJobValue)} icon={Banknote} />
         <StatTile
           label="Awaiting WO Number"
           value={kpis.jobsAwaitingWoNumber}
