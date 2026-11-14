@@ -58,12 +58,33 @@ export interface DashboardSummary {
 }
 
 export interface DashboardPeriod {
-  month: string; // "2026-10"
-  label: string; // "October 2026"
+  kind: "month" | "year";
+  key: string; // "2026-10" or "2026"
+  label: string; // "October 2026" or "2026"
   start: string;
-  /** Pipeline figures are as of this instant: month end, or now for the current month. */
+  /** Pipeline figures are as of this instant: the period end, or now for the current month / year. */
   asOf: string;
+  isCurrent: boolean;
+}
+
+/** One month in a year's forecast summary. */
+export interface YearForecastMonth {
+  month: string;
+  tracked: boolean;
+  provisional: boolean;
   isCurrentMonth: boolean;
+  forecastTotal: number;
+  invoicedTotal: number;
+  achievedPercent: number | null;
+  notInvoicedTotal: number;
+  backdatedTotal: number;
+}
+
+export interface YearForecast {
+  year: number;
+  months: YearForecastMonth[];
+  /** Over months that had a forecast. */
+  totals: { trackedMonths: number; forecastTotal: number; invoicedTotal: number; achievedPercent: number | null };
 }
 
 export interface MonthInvoicedRow {
@@ -175,24 +196,28 @@ export interface ForecastReport {
 }
 
 export interface DashboardResponse extends DashboardSummary {
-  /** Forecast vs invoiced for the selected month (null in the all-time view). */
+  period: DashboardPeriod;
+  monthDetail: MonthDetail;
+  /** Forecast vs invoiced for a month view (null for a year). */
   forecast: ForecastReport | null;
-  /** null = all-time view */
-  period: DashboardPeriod | null;
-  monthDetail: MonthDetail | null;
+  /** Month-by-month forecast summary for a year view (null for a month). */
+  yearForecast: YearForecast | null;
   /** "YYYY-MM", newest first */
   availableMonths: string[];
+  /** "YYYY", newest first */
+  availableYears: string[];
 }
 
-/** `month` is "YYYY-MM", or "all" for all-time figures. */
-export function useDashboardSummary(month: string) {
+/** `period` is a month ("2026-10") or a year ("2026"). */
+export function useDashboardSummary(period: string) {
   return useQuery({
-    queryKey: ["dashboard", "summary", month],
+    queryKey: ["dashboard", "summary", period],
     queryFn: async () => {
-      const { data } = await apiClient.get<DashboardResponse>("/dashboard/summary", { params: { month } });
+      const params = period.length === 4 ? { year: period } : { month: period };
+      const { data } = await apiClient.get<DashboardResponse>("/dashboard/summary", { params });
       return data;
     },
-    // Keep showing the previous month while the next one loads, instead of flashing a spinner.
+    // Keep showing the previous period while the next one loads, instead of flashing a spinner.
     placeholderData: keepPreviousData,
     // Changes made in the app refresh it straight away (mutations invalidate it); this only picks up
     // other people's changes.

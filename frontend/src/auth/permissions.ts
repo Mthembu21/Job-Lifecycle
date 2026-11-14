@@ -30,3 +30,13 @@ export function canEditForecast(role: Role | undefined): boolean {
 export function canDeleteJob(role: Role | undefined): boolean {
   return role === "STOREMAN" || role === "ADMIN";
 }
+
+/** The Import / Export page (export: planners; import: admin). Mirrors importExport.routes.ts. */
+export function canUseDataImportExport(role: Role | undefined): boolean {
+  return role === "PLANNER" || role === "ADMIN";
+}
+
+/** The TV board link in the menu (the board itself is a public screen). */
+export function canSeeBoardLink(role: Role | undefined): boolean {
+  return role !== "STOREMAN";
+}

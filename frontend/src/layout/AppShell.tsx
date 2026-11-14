@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { ArrowDownUp, Briefcase, CalendarCheck, ExternalLink, LayoutDashboard, LogOut, Moon, Sun } from "lucide-react";
-import { canEditForecast } from "../auth/permissions";
+import { canEditForecast, canSeeBoardLink, canUseDataImportExport } from "../auth/permissions";
 import type { LucideIcon } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { useThemeMode } from "../theme/ThemeProvider";
@@ -72,11 +72,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           {user?.role !== "STOREMAN" && <NavItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />}
           <NavItem to="/jobs" icon={Briefcase} label="Jobs" />
           {canEditForecast(user?.role) && <NavItem to="/forecast" icon={CalendarCheck} label="Forecast" />}
-          {user?.role !== "SUPERVISOR" && <NavItem to="/admin/data" icon={ArrowDownUp} label="Import / Export" />}
-          <a href="/board" target="_blank" rel="noopener noreferrer" className={cn(NAV_ITEM, NAV_IDLE)}>
-            <ExternalLink className="size-5 shrink-0" />
-            <span className="truncate">TV Board</span>
-          </a>
+          {canUseDataImportExport(user?.role) && <NavItem to="/admin/data" icon={ArrowDownUp} label="Import / Export" />}
+          {canSeeBoardLink(user?.role) && (
+            <a href="/board" target="_blank" rel="noopener noreferrer" className={cn(NAV_ITEM, NAV_IDLE)}>
+              <ExternalLink className="size-5 shrink-0" />
+              <span className="truncate">TV Board</span>
+            </a>
+          )}
         </nav>
       </aside>
 
@@ -85,7 +87,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         {user?.role !== "STOREMAN" && <NavItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />}
         <NavItem to="/jobs" icon={Briefcase} label="Jobs" />
         {canEditForecast(user?.role) && <NavItem to="/forecast" icon={CalendarCheck} label="Forecast" />}
-        {user?.role !== "SUPERVISOR" && <NavItem to="/admin/data" icon={ArrowDownUp} label="Import / Export" />}
+        {canUseDataImportExport(user?.role) && <NavItem to="/admin/data" icon={ArrowDownUp} label="Import / Export" />}
       </nav>
 
       <main className="px-4 pt-32 pb-10 sm:px-6 md:ml-56 md:pt-24">

@@ -274,16 +274,21 @@ function explain(job: JobWithListRelations, then: JobWithListRelations, status: 
   return { cause, missingWo, factors };
 }
 
-export async function buildForecastReport(rawJobs: JobWithListRelations[], year: number, month: number, now = new Date()) {
-  await ensureForecastsFrozen(now);
+export async function buildForecastReport(
+  rawJobs: JobWithListRelations[],
+  year: number,
+  month: number,
+  now = new Date(),
+  { skipFreeze = false, data }: { skipFreeze?: boolean; data?: ForecastData } = {}
+) {
+  if (!skipFreeze) await ensureForecastsFrozen(now);
   const { key, start, isCurrentMonth, asOf, inMonth } = monthWindow(year, month, now);
 
-  const [freeze, firstFreeze, snapshots, notes] = await Promise.all([
-    prisma.forecastFreeze.findUnique({ where: { month: key } }),
-    prisma.forecastFreeze.findFirst({ orderBy: { month: "asc" } }),
-    prisma.forecastSnapshot.findMany({ where: { month: key } }),
-    prisma.forecastNote.findMany({ where: { month: key } }),
-  ]);
+  const { freezes, snapshots: allSnapshots, notes: allNotes } = data ?? (await loadForecastData([key]));
+  const freeze = freezes.find((f) => f.month === key) ?? null;
+  const firstFreeze = freezes[0] ?? null;
+  const snapshots = allSnapshots.filter((r) => r.month === key);
+  const notes = allNotes.filter((n) => n.month === key);
 
   // Months before forecasting existed have nothing to compare.
   const tracked = Boolean(firstFreeze && key >= firstFreeze.month);
@@ -435,5 +440,54 @@ export async function buildForecastReport(rawJobs: JobWithListRelations[], year:
     causes: [...causeMap.values()].sort((a, b) => b.amount - a.amount),
     noWo: { count: noWo.length, amount: sum(noWo.map((r) => r.forecastAmount)) },
     rows,
+  };
+}
+
+/** Forecast records for some months, loaded together (all freeze markers, oldest first). */
+async function loadForecastData(months: string[]) {
+  const [freezes, snapshots, notes] = await Promise.all([
+    prisma.forecastFreeze.findMany({ orderBy: { month: "asc" } }),
+    prisma.forecastSnapshot.findMany({ where: { month: { in: months } } }),
+    prisma.forecastNote.findMany({ where: { month: { in: months } } }),
+  ]);
+  return { freezes, snapshots, notes };
+}
+type ForecastData = Awaited<ReturnType<typeof loadForecastData>>;
+
+/**
+ * A year's forecast performance, month by month (up to the current month). Year totals cover only
+ * months that had a forecast, so forecast and invoiced compare like with like.
+ */
+export async function buildYearForecast(rawJobs: JobWithListRelations[], year: number, now = new Date()) {
+  await ensureForecastsFrozen(now);
+  const lastMonth = year < now.getFullYear() ? 12 : year === now.getFullYear() ? now.getMonth() + 1 : 0;
+  // One round of queries for the whole year, shared by the monthly reports.
+  const data = await loadForecastData(Array.from({ length: lastMonth }, (_, i) => monthKeyOf(new Date(year, i, 1))));
+  const reports = await Promise.all(
+    Array.from({ length: lastMonth }, (_, i) => buildForecastReport(rawJobs, year, i + 1, now, { skipFreeze: true, data }))
+  );
+  const months = reports.map((r) => ({
+    month: r.month,
+    tracked: r.tracked,
+    provisional: r.provisional,
+    isCurrentMonth: r.isCurrentMonth,
+    forecastTotal: r.summary.forecastTotal,
+    invoicedTotal: r.summary.invoicedTotal,
+    achievedPercent: r.summary.achievedPercent,
+    notInvoicedTotal: r.summary.notInvoicedTotal,
+    backdatedTotal: r.summary.backdatedTotal,
+  }));
+  const tracked = months.filter((m) => m.tracked);
+  const forecastTotal = tracked.reduce((s, m) => s + m.forecastTotal, 0);
+  const invoicedTotal = tracked.reduce((s, m) => s + m.invoicedTotal, 0);
+  return {
+    year,
+    months,
+    totals: {
+      trackedMonths: tracked.length,
+      forecastTotal,
+      invoicedTotal,
+      achievedPercent: forecastTotal > 0 ? Math.round((invoicedTotal / forecastTotal) * 100) : null,
+    },
   };
 }
