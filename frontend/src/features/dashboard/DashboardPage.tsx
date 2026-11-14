@@ -128,17 +128,7 @@ export function DashboardPage() {
           icon={AlertTriangle}
           tone={kpis.delayedJobs > 0 ? "critical" : "default"}
         />
-        <StatTile
-          wide
-          label="Open Job Value"
-          value={currency(kpis.totalOpenJobValue)}
-          sub={
-            kpis.openNonInvoicedCount > 0
-              ? `incl. ${currency(kpis.openNonInvoicedValue)} internal/warranty (not invoiced)`
-              : undefined
-          }
-          icon={Banknote}
-        />
+        <StatTile wide label="Open Job Value" value={currency(kpis.totalOpenJobValue)} icon={Banknote} />
         <StatTile
           label="Awaiting WO Number"
           value={kpis.jobsAwaitingWoNumber}

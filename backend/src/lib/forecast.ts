@@ -4,7 +4,16 @@ import { DerivedJobStatus, deriveJobStatus } from "./statusEngine";
 import { daysBetween } from "./sla";
 import { JOB_TYPE_LABELS, SlaStage, STAGE_LABELS } from "./labels";
 import { monthKeyOf, monthWindow, nextMonthKey } from "./months";
+import { hasPurchaseOrder, isNonInvoicedJobType } from "./jobTypes";
 import { JobWithListRelations } from "../modules/jobs/jobs.dto";
+
+const money = (n: number) =>
+  `R ${n.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+const fmtDate = (d: Date) => d.toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" });
+const fmtMonth = (key: string) => {
+  const [y, m] = key.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString("en-ZA", { month: "long", year: "numeric" });
+};
 
 /*
  * Invoice forecasting.
@@ -23,23 +32,15 @@ function isUniqueViolation(e: unknown): boolean {
   return typeof e === "object" && e !== null && (e as { code?: string }).code === "P2002";
 }
 
-async function freezeMonth(month: string, provisional: boolean) {
-  // Claim the month first (unique index): if another request is already freezing it, stop here.
-  try {
-    await prisma.forecastFreeze.create({ data: { month, provisional } });
-  } catch (e) {
-    if (isUniqueViolation(e)) return;
-    throw e;
-  }
-  if (provisional) return;
-
+/** Saves the live forecast for `month` as its committed (locked) forecast. */
+async function snapshotLiveForecast(month: string) {
   const jobs = await prisma.job.findMany({
     where: { forecastMonth: month },
     select: { id: true, referenceNumber: true, customer: true, forecastAmount: true },
   });
-  if (jobs.length === 0) return;
-  // We hold the month's claim, so any snapshot rows already there are from an interrupted freeze.
+  // Only the claimant gets here, so any rows already present are from an interrupted freeze.
   await prisma.forecastSnapshot.deleteMany({ where: { month } });
+  if (jobs.length === 0) return;
   await prisma.forecastSnapshot.createMany({
     data: jobs.map((job) => ({
       month,
@@ -51,20 +52,129 @@ async function freezeMonth(month: string, provisional: boolean) {
   });
 }
 
-/** Freezes every month that has started but isn't frozen yet. Call before changing any forecast. */
+async function freezeMonth(month: string, provisional: boolean) {
+  // Claim the month first (unique index): if another request is already freezing it, stop here.
+  try {
+    await prisma.forecastFreeze.create({ data: { month, provisional, lockedAt: provisional ? null : new Date() } });
+  } catch (e) {
+    if (isUniqueViolation(e)) return;
+    throw e;
+  }
+  if (!provisional) await snapshotLiveForecast(month);
+}
+
+/**
+ * Freezes every month that has started but isn't frozen yet, and locks a provisional (launch) month
+ * once it has ended. Call before changing any forecast.
+ */
 export async function ensureForecastsFrozen(now = new Date()): Promise<void> {
   const current = monthKeyOf(now);
-  const latest = await prisma.forecastFreeze.findFirst({ orderBy: { month: "desc" } });
 
+  // A provisional month used the live forecast while it ran; lock it as it stood when it ended.
+  const unlocked = await prisma.forecastFreeze.findMany({ where: { provisional: true, lockedAt: null, month: { lt: current } } });
+  for (const freeze of unlocked) {
+    // Claim it (only one request wins the update), then snapshot.
+    const claimed = await prisma.forecastFreeze.updateMany({ where: { id: freeze.id, lockedAt: null }, data: { lockedAt: new Date() } });
+    if (claimed.count === 1) await snapshotLiveForecast(freeze.month);
+  }
+
+  const latest = await prisma.forecastFreeze.findFirst({ orderBy: { month: "desc" } });
   if (!latest) {
     // Forecasting goes live this month: nothing was forecast before it started, so this first month
-    // is compared against the live forecast (flagged as provisional in the report).
+    // is compared against the live forecast while it runs (flagged as provisional in the report).
     await freezeMonth(current, true);
     return;
   }
   for (let m = nextMonthKey(latest.month); m <= current; m = nextMonthKey(m)) {
     await freezeMonth(m, false);
   }
+}
+
+/** The month before the current one — the only past month that can still be backdated. */
+export function previousMonthKey(now = new Date()): string {
+  return monthKeyOf(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+}
+
+/**
+ * Backdating: add or change forecast entries for the previous (already ended) month. They go straight
+ * into that month's committed forecast, marked as backdated. Entries that were locked when the month
+ * ended are never changed or removed here.
+ */
+export async function applyBackdatedForecast(
+  month: string,
+  set: { jobId: string; amount: number }[],
+  clear: string[],
+  userId: string
+): Promise<number> {
+  await ensureForecastsFrozen();
+  const [y, m] = month.split("-").map(Number);
+  const { start, endOfMonth } = monthWindow(y, m);
+
+  // Make sure the month counts as tracked (a month before forecasting went live has no record yet).
+  await prisma.forecastFreeze.upsert({
+    where: { month },
+    create: { month, provisional: false, lockedAt: new Date() },
+    update: {},
+  });
+
+  const ids = [...set.map((s) => s.jobId), ...clear];
+  const [jobs, existing] = await Promise.all([
+    prisma.job.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        referenceNumber: true,
+        customer: true,
+        jobType: true,
+        jobCreatedDate: true,
+        poNumber: true,
+        repair: { select: { purchaseOrderNumber: true, purchaseOrderDate: true } },
+        invoice: { select: { invoiceDate: true } },
+      },
+    }),
+    prisma.forecastSnapshot.findMany({ where: { month, jobId: { in: ids } } }),
+  ]);
+  const jobById = new Map(jobs.map((j) => [j.id, j]));
+  const rowByJob = new Map(existing.map((r) => [r.jobId, r]));
+  const audit: { jobId: string; summary: string }[] = [];
+  const label = fmtMonth(month);
+
+  for (const { jobId, amount } of set) {
+    const job = jobById.get(jobId);
+    const row = rowByJob.get(jobId);
+    if (!job || isNonInvoicedJobType(job.jobType) || !hasPurchaseOrder(job)) continue;
+    // Only jobs that were open during the month: opened by its end, not invoiced before it began.
+    if (job.jobCreatedDate > endOfMonth || (job.invoice?.invoiceDate && job.invoice.invoiceDate < start)) continue;
+    if (row && (!row.backdated || row.amount === amount)) continue; // locked at month end, or unchanged
+    await prisma.forecastSnapshot.upsert({
+      where: { month_jobId: { month, jobId } },
+      create: { month, jobId, referenceNumber: job.referenceNumber, customer: job.customer, amount, backdated: true },
+      update: { amount },
+    });
+    audit.push({ jobId, summary: `Backdated forecast for ${label}: ${row ? `${money(row.amount)} -> ` : ""}${money(amount)}` });
+  }
+
+  for (const jobId of clear) {
+    const row = rowByJob.get(jobId);
+    if (!row?.backdated) continue; // only backdated entries can be removed
+    await prisma.forecastSnapshot.delete({ where: { id: row.id } });
+    if (jobById.has(jobId)) audit.push({ jobId, summary: `Backdated forecast for ${label} removed (${money(row.amount)})` });
+  }
+
+  if (audit.length > 0) {
+    await prisma.jobAuditLog.createMany({
+      data: audit.map((a) => ({ ...a, stage: "FORECAST", action: "BACKDATE", comment: null, changedById: userId })),
+    });
+  }
+  return audit.length;
+}
+
+/** Committed forecast rows for a month (for the Forecast page's backdating view). */
+export function committedForecast(month: string) {
+  return prisma.forecastSnapshot.findMany({
+    where: { month },
+    select: { jobId: true, amount: true, backdated: true },
+  });
 }
 
 // ── Report ────────────────────────────────────────────────────────────────
@@ -113,11 +223,9 @@ export interface ForecastRow {
   missingWo: boolean;
   factors: ForecastFactor[];
   note: { comment: string; by: string; at: string } | null;
+  /** Added to the month's forecast after the month ended (backdated). */
+  backdated: boolean;
 }
-
-const money = (n: number) =>
-  `R ${n.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-const fmtDate = (d: Date) => d.toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" });
 
 /** Explains why a job wasn't invoiced, from where it stood at `asOf` (`then` = the job rewound to it). */
 function explain(job: JobWithListRelations, then: JobWithListRelations, status: DerivedJobStatus, asOf: Date) {
@@ -179,18 +287,24 @@ export async function buildForecastReport(rawJobs: JobWithListRelations[], year:
 
   // Months before forecasting existed have nothing to compare.
   const tracked = Boolean(firstFreeze && key >= firstFreeze.month);
-  const provisional = Boolean(freeze?.provisional);
+  // Provisional = the launch month while it is still running (compared against the live forecast).
+  const provisional = Boolean(freeze?.provisional && !freeze.lockedAt);
   const jobsById = new Map(rawJobs.map((j) => [j.id, j]));
   const noteByJob = new Map(notes.map((n) => [n.jobId, n]));
 
-  // Committed forecast: the frozen snapshot — or, in the provisional first month, the live forecast.
-  const committed = new Map<string, { referenceNumber: string; customer: string; amount: number }>();
+  // Committed forecast: the locked snapshot — or, while the provisional first month is still running,
+  // the live forecast. Backdated entries (added after the month ended) are flagged.
+  const committed = new Map<string, { referenceNumber: string; customer: string; amount: number; backdated: boolean }>();
   if (provisional) {
     for (const j of rawJobs) {
-      if (j.forecastMonth === key) committed.set(j.id, { referenceNumber: j.referenceNumber, customer: j.customer, amount: j.forecastAmount ?? 0 });
+      if (j.forecastMonth === key) {
+        committed.set(j.id, { referenceNumber: j.referenceNumber, customer: j.customer, amount: j.forecastAmount ?? 0, backdated: false });
+      }
     }
   } else {
-    for (const s of snapshots) committed.set(s.jobId, { referenceNumber: s.referenceNumber, customer: s.customer, amount: s.amount });
+    for (const s of snapshots) {
+      committed.set(s.jobId, { referenceNumber: s.referenceNumber, customer: s.customer, amount: s.amount, backdated: s.backdated });
+    }
   }
 
   const rows: ForecastRow[] = [];
@@ -207,7 +321,7 @@ export async function buildForecastReport(rawJobs: JobWithListRelations[], year:
         jobId, referenceNumber: fc.referenceNumber, customer: fc.customer, outcome: "REMOVED",
         forecastAmount: fc.amount, invoicedAmount: null, invoiceDate: null, currentForecastMonth: null,
         cause: "Job deleted", missingWo: false, factors: [{ text: "Job was deleted after the forecast was set", tone: "info" }],
-        note: noteFor(jobId),
+        note: noteFor(jobId), backdated: fc.backdated,
       });
       continue;
     }
@@ -215,7 +329,7 @@ export async function buildForecastReport(rawJobs: JobWithListRelations[], year:
     const invoicedAmount = job.invoice?.invoiceAmount ?? null;
     const base = {
       jobId, referenceNumber: job.referenceNumber, customer: job.customer,
-      forecastAmount: fc.amount, currentForecastMonth: job.forecastMonth ?? null, note: noteFor(jobId),
+      forecastAmount: fc.amount, currentForecastMonth: job.forecastMonth ?? null, note: noteFor(jobId), backdated: fc.backdated,
     };
 
     if (inMonth(invoiceDate)) {
@@ -260,7 +374,7 @@ export async function buildForecastReport(rawJobs: JobWithListRelations[], year:
     rows.push({
       jobId: job.id, referenceNumber: job.referenceNumber, customer: job.customer, outcome: "UNPLANNED",
       forecastAmount: null, invoicedAmount: job.invoice?.invoiceAmount ?? null, invoiceDate: job.invoice!.invoiceDate!.toISOString(),
-      currentForecastMonth: job.forecastMonth ?? null, cause: null, missingWo: false, factors, note: noteFor(job.id),
+      currentForecastMonth: job.forecastMonth ?? null, cause: null, missingWo: false, factors, note: noteFor(job.id), backdated: false,
     });
   }
 
@@ -314,6 +428,9 @@ export async function buildForecastReport(rawJobs: JobWithListRelations[], year:
       unplannedCount: unplanned.length,
       /** Live forecast for this month right now (what planners currently expect). */
       latestForecastTotal: sum(rawJobs.filter((j) => j.forecastMonth === key).map((j) => j.forecastAmount)),
+      /** Part of the forecast added after the month ended (backdated). */
+      backdatedTotal: sum(forecastRows.filter((r) => r.backdated).map((r) => r.forecastAmount)),
+      backdatedCount: forecastRows.filter((r) => r.backdated).length,
     },
     causes: [...causeMap.values()].sort((a, b) => b.amount - a.amount),
     noWo: { count: noWo.length, amount: sum(noWo.map((r) => r.forecastAmount)) },

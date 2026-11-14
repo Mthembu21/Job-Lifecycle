@@ -5,8 +5,8 @@ import { asyncHandler, HttpError } from "../../middleware/errorHandler";
 import { authenticate } from "../../middleware/auth";
 import { requireRole } from "../../middleware/rbac";
 import { diffSummary, writeAuditLog } from "../../lib/audit";
-import { ensureForecastsFrozen } from "../../lib/forecast";
-import { isNonInvoicedJobType } from "../../lib/jobTypes";
+import { applyBackdatedForecast, committedForecast, ensureForecastsFrozen, previousMonthKey } from "../../lib/forecast";
+import { hasPurchaseOrder, isNonInvoicedJobType } from "../../lib/jobTypes";
 import { MONTH_KEY_RE, monthKeyOf, parseMonth } from "../../lib/months";
 
 const router = Router();
@@ -80,11 +80,25 @@ router.get(
     res.json({
       month: key,
       started: key <= monthKeyOf(new Date()),
-      locked: Boolean(freeze && !freeze.provisional),
-      provisional: Boolean(freeze?.provisional),
+      locked: Boolean(freeze?.lockedAt),
+      provisional: Boolean(freeze?.provisional && !freeze.lockedAt),
+      /** The month has ended but can still be backdated (previous month only). */
+      backdating: key === previousMonthKey(),
       /** The moment the previous month ends — when this month's forecast locks. */
       locksAt: new Date(year, month - 1, 1).toISOString(),
     });
+  })
+);
+
+/**
+ * GET /api/forecast/:month/committed — a past month's committed forecast entries
+ * ([{ jobId, amount, backdated }]), for the Forecast page's backdating view.
+ */
+router.get(
+  "/:month/committed",
+  authenticate,
+  asyncHandler(async (req, res) => {
+    res.json(await committedForecast(req.params.month));
   })
 );
 
@@ -105,15 +119,31 @@ router.put(
   requireRole("PLANNER"),
   asyncHandler(async (req, res) => {
     const { month } = req.params;
-    if (month < monthKeyOf(new Date())) throw new HttpError(400, "You can't forecast into a month that has already ended");
     const { set, clear } = assignSchema.parse(req.body);
+
+    // The previous month has ended: changes are backdated straight into its committed forecast.
+    if (month === previousMonthKey()) {
+      res.json({ updated: await applyBackdatedForecast(month, set, clear, req.user!.sub) });
+      return;
+    }
+    if (month < monthKeyOf(new Date())) {
+      throw new HttpError(400, "Only the previous month can be backdated — earlier months are closed");
+    }
 
     // Lock any month that has started before its forecast changes (see lib/forecast.ts).
     await ensureForecastsFrozen();
 
     const jobs = await prisma.job.findMany({
       where: { id: { in: [...set.map((s) => s.jobId), ...clear] } },
-      select: { id: true, jobType: true, forecastMonth: true, forecastAmount: true, invoice: { select: { invoiceDate: true } } },
+      select: {
+        id: true,
+        jobType: true,
+        forecastMonth: true,
+        forecastAmount: true,
+        poNumber: true,
+        repair: { select: { purchaseOrderNumber: true, purchaseOrderDate: true } },
+        invoice: { select: { invoiceDate: true } },
+      },
     });
     const byId = new Map(jobs.map((j) => [j.id, j]));
 
@@ -121,8 +151,8 @@ router.put(
     const changes: { jobId: string; before: (typeof jobs)[number]; forecastMonth: string | null; forecastAmount: number | null }[] = [];
     for (const { jobId, amount } of set) {
       const job = byId.get(jobId);
-      // Gone, already invoiced, or an internal / warranty job (never invoiced).
-      if (!job || job.invoice?.invoiceDate || isNonInvoicedJobType(job.jobType)) continue;
+      // Gone, already invoiced, an internal / warranty job (never invoiced), or no PO yet.
+      if (!job || job.invoice?.invoiceDate || isNonInvoicedJobType(job.jobType) || !hasPurchaseOrder(job)) continue;
       if (job.forecastMonth === month && job.forecastAmount === amount) continue;
       changes.push({ jobId, before: job, forecastMonth: month, forecastAmount: amount });
     }

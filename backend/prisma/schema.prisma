@@ -182,6 +182,8 @@ model ForecastSnapshot {
   referenceNumber String
   customer        String
   amount          Float
+  /// Added by a planner after the month ended (via backdating), not locked at month end.
+  backdated       Boolean  @default(false)
   createdAt       DateTime @default(now())
 
   @@unique([month, jobId])
@@ -189,12 +191,14 @@ model ForecastSnapshot {
 
 /// Marks a month's forecast as frozen.
 model ForecastFreeze {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  month       String   @unique /// "YYYY-MM"
-  frozenAt    DateTime @default(now())
-  /// The month forecasting went live: there was no forecast before it began, so its comparison uses
-  /// the live forecast instead of a snapshot.
-  provisional Boolean  @default(false)
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  month       String    @unique /// "YYYY-MM"
+  frozenAt    DateTime  @default(now())
+  /// The month forecasting went live: there was no forecast before it began, so while it runs its
+  /// comparison uses the live forecast. It's still locked (snapshotted) when it ends.
+  provisional Boolean   @default(false)
+  /// When the month's forecast was locked. Null only for a provisional month that's still running.
+  lockedAt    DateTime?
 }
 
 /// A planner's comment explaining a job's forecast outcome in a given month.

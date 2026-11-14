@@ -7,15 +7,15 @@ import { canEditForecast } from "../../auth/permissions";
 import { formatCurrency } from "../../utils/currency";
 import { JOB_TYPE_LABELS } from "../../constants";
 import { defaultForecastAmount } from "../../utils/forecast";
-import { isNonInvoicedJobType } from "../../utils/jobTypes";
+import { hasPurchaseOrder, isNonInvoicedJobType } from "../../utils/jobTypes";
 import { Button, Card, CardTitle, IconButton, TextField } from "../../components/ui";
 import { FormDialog } from "../../components/FormDialog";
 import { currentMonthKey, monthLabel, monthRange } from "../../utils/month";
 import { apiErrorMessage } from "../../api/client";
 
-/** Months offered: 2 back (late corrections) to 12 ahead. */
+/** Months offered: this month to 12 ahead (past months are backdated from the Forecast page). */
 function monthOptions(selected: string | null): string[] {
-  const months = monthRange(-2, 12);
+  const months = monthRange(0, 12);
   return selected && !months.includes(selected) ? [selected, ...months] : months;
 }
 
@@ -23,7 +23,8 @@ export function ForecastCard({ job }: { job: Job }) {
   const { user } = useAuth();
   const [editing, setEditing] = useState(false);
   const notInvoiced = isNonInvoicedJobType(job.jobType);
-  const canEdit = canEditForecast(user?.role) && !job.status.isClosed && !notInvoiced;
+  const noPo = !hasPurchaseOrder(job);
+  const canEdit = canEditForecast(user?.role) && !job.status.isClosed && !notInvoiced && !noPo;
   const invoiced = Boolean(job.invoice?.invoiceDate);
 
   return (
@@ -43,6 +44,8 @@ export function ForecastCard({ job }: { job: Job }) {
         <p className="text-sm text-gray-500 dark:text-gray-400">
           {JOB_TYPE_LABELS[job.jobType]} jobs aren't invoiced, so there's no invoice forecast.
         </p>
+      ) : noPo && !job.forecastMonth ? (
+        <p className="text-sm text-gray-500 dark:text-gray-400">No PO yet — the job can be forecast once its PO is recorded.</p>
       ) : job.forecastMonth ? (
         <div className="flex items-center gap-3">
           <span className="flex size-10 items-center justify-center rounded-lg bg-yellow-soft dark:bg-yellow/10">
