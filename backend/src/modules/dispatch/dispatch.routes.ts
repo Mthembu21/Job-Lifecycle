@@ -11,6 +11,7 @@ import { jobListInclude, toJobDto } from "../jobs/jobs.dto";
 const router = Router({ mergeParams: true });
 
 const dispatchSchema = z.object({
+  dispatchRequestDate: z.coerce.date().optional(),
   dispatchDate: z.coerce.date().optional(),
   courier: z.string().optional(),
   trackingNumber: z.string().optional(),
@@ -54,6 +55,34 @@ router.patch(
       action: "UPDATE",
       summary: diffSummary(before, updated),
       comment: data.comments ?? null,
+      changedById: req.user!.sub,
+    });
+
+    const fullJob = await prisma.job.findUnique({ where: { id: jobId }, include: jobListInclude });
+    res.json(toJobDto(fullJob!));
+  })
+);
+
+router.delete(
+  "/",
+  authenticate,
+  requireRole("STOREMAN", "PLANNER"),
+  asyncHandler(async (req, res) => {
+    const jobId = req.params.jobId;
+    const job = await prisma.job.findUnique({ where: { id: jobId }, include: { dispatch: true, invoice: true } });
+    if (!job) throw new HttpError(404, "Job not found");
+    if (!job.dispatch) throw new HttpError(404, "This job has no dispatch to delete");
+    if (job.invoice) {
+      throw new HttpError(400, "Delete this job's invoice first — it depends on the dispatch date");
+    }
+
+    await prisma.dispatch.delete({ where: { jobId } });
+
+    await writeAuditLog({
+      jobId,
+      stage: "DISPATCH",
+      action: "DELETE",
+      summary: "Dispatch deleted",
       changedById: req.user!.sub,
     });
 

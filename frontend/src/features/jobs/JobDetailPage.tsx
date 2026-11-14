@@ -21,6 +21,7 @@ import { StageTimeline } from "./StageTimeline";
 import { AuditLogPanel } from "./AuditLogPanel";
 import { JobFieldDialog, JobEditableField } from "./JobFieldDialog";
 import { DeleteJobDialog } from "./DeleteJobDialog";
+import { DeleteStageDialog } from "./stageForms/DeleteStageDialog";
 import { QuotationDialog } from "./stageForms/QuotationDialog";
 import { RepairDialog } from "./stageForms/RepairDialog";
 import { DispatchDialog } from "./stageForms/DispatchDialog";
@@ -37,7 +38,7 @@ const FIELD_LABELS: Record<JobEditableField, string> = {
   woNumber: "WO Number",
   poNumber: "PO Number",
   woNumberSetAt: "WO Number Date",
-  jobCreatedDate: "Job Created Date",
+  jobCreatedDate: "Job Opening",
 };
 
 export function JobDetailPage() {
@@ -48,6 +49,7 @@ export function JobDetailPage() {
   const [activeDialog, setActiveDialog] = useState<StageKey | null>(null);
   const [editingField, setEditingField] = useState<JobEditableField | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [deletingStage, setDeletingStage] = useState<StageKey | null>(null);
 
   if (isLoading || !job) {
     return (
@@ -142,8 +144,13 @@ export function JobDetailPage() {
                 Job Details
               </Typography>
               <Stack spacing={1}>
-                <DetailRow label="Serial Number" value={job.serialNumber} />
-                <DetailRow label="Part Number" value={job.partNumber ?? "—"} />
+                <DetailRow label="Serial Nr" value={job.serialNumber} />
+                <DetailRow label="Part Nr" value={job.partNumber ?? "—"} />
+                <DetailRow label="Machine Nr" value={job.machineNumber ?? "—"} />
+                <DetailRow label="Machine Serial Nr" value={job.machineSerialNumber ?? "—"} />
+                <DetailRow label="Customer Ref" value={job.customerRef ?? "—"} />
+                <DetailRow label="Customer Acc" value={job.customerAccount ?? "—"} />
+                <DetailRow label="Date Received" value={job.dateReceived ? formatDate(job.dateReceived) : "—"} />
                 <DetailRow
                   label="WO Number"
                   value={
@@ -199,9 +206,9 @@ export function JobDetailPage() {
                     </Stack>
                   }
                 />
-                <DetailRow label="Created By" value={job.createdBy ? "Storeman" : "—"} />
+                <DetailRow label="Created By" value={job.createdBy?.name ?? "—"} />
                 <DetailRow
-                  label="Job Created Date"
+                  label="Job Opening"
                   value={
                     <Stack direction="row" spacing={0.5} alignItems="center">
                       <Typography variant="body2" fontWeight={500}>
@@ -215,7 +222,7 @@ export function JobDetailPage() {
                     </Stack>
                   }
                 />
-                <DetailRow label="PO Value" value={formatCurrency(Number(job.poValue))} />
+                <DetailRow label="Order Value" value={formatCurrency(Number(job.poValue))} />
                 <DetailRow
                   label="Overall SLA Compliance"
                   value={
@@ -225,7 +232,7 @@ export function JobDetailPage() {
                 {currentStageSla && (
                   <DetailRow label="Current Stage SLA" value={<SlaChip status={currentStageSla.status} />} />
                 )}
-                {job.comments && <DetailRow label="Comments" value={job.comments} />}
+                {job.comments && <DetailRow label="Comment" value={job.comments} />}
               </Stack>
             </CardContent>
           </Card>
@@ -237,7 +244,7 @@ export function JobDetailPage() {
               <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>
                 Lifecycle Timeline
               </Typography>
-              <StageTimeline job={job} onEdit={setActiveDialog} />
+              <StageTimeline job={job} onEdit={setActiveDialog} onDelete={setDeletingStage} />
             </CardContent>
           </Card>
         </Grid>
@@ -257,6 +264,9 @@ export function JobDetailPage() {
       )}
       {deleting && (
         <DeleteJobDialog job={job} onClose={() => setDeleting(false)} onDeleted={() => navigate("/jobs")} />
+      )}
+      {deletingStage && (
+        <DeleteStageDialog jobId={job.id} stage={deletingStage} onClose={() => setDeletingStage(null)} />
       )}
     </Box>
   );

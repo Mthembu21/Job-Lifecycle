@@ -47,6 +47,8 @@ export interface DashboardSummary {
     jobValueByMonth: ChartBucket[];
     invoiceValueByWeek: ChartBucket[];
     jobValueByWeek: ChartBucket[];
+    jobsInvoicedByMonth: ChartBucket[];
+    jobsInvoicedByWeek: ChartBucket[];
     quotationPerformance: { withinSla: number; outsideSla: number };
     slaComplianceTrend: ChartBucket[];
     delayedByStage: ChartBucket[];

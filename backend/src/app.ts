@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import { env } from "./config/env";
 import { errorHandler } from "./middleware/errorHandler";
+import { prisma } from "./lib/prisma";
 import authRoutes from "./modules/auth/auth.routes";
 import usersRoutes from "./modules/users/users.routes";
 import jobsRoutes from "./modules/jobs/jobs.routes";
@@ -11,6 +12,7 @@ import dispatchRoutes from "./modules/dispatch/dispatch.routes";
 import invoiceRoutes from "./modules/invoice/invoice.routes";
 import auditRoutes from "./modules/audit/audit.routes";
 import dashboardRoutes from "./modules/dashboard/dashboard.routes";
+import importExportRoutes from "./modules/importExport/importExport.routes";
 import boardRoutes from "./modules/board/board.routes";
 
 export function createApp() {
@@ -19,7 +21,14 @@ export function createApp() {
   app.use(cors({ origin: env.corsOrigin }));
   app.use(express.json());
 
-  app.get("/health", (_req, res) => res.json({ ok: true }));
+  app.get("/health", async (_req, res) => {
+    try {
+      await prisma.user.findFirst({ select: { id: true } });
+      res.json({ ok: true, database: "connected" });
+    } catch {
+      res.status(503).json({ ok: false, database: "disconnected" });
+    }
+  });
 
   app.use("/api/auth", authRoutes);
   app.use("/api/users", usersRoutes);
@@ -30,6 +39,7 @@ export function createApp() {
   app.use("/api/jobs/:jobId/invoice", invoiceRoutes);
   app.use("/api/jobs/:jobId/audit", auditRoutes);
   app.use("/api/dashboard", dashboardRoutes);
+  app.use("/api/import-export", importExportRoutes);
   app.use("/api/board", boardRoutes);
 
   app.use(errorHandler);

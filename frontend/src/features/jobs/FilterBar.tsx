@@ -27,7 +27,7 @@ export function FilterBar({ filters, onChange }: FilterBarProps) {
         <Grid item xs={6} sm={3} md={2}>
           <TextField
             select
-            label="Job Type"
+            label="Service Type"
             fullWidth
             size="small"
             value={filters.jobType ?? ""}

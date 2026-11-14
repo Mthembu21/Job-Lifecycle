@@ -1,10 +1,11 @@
 import { Controller, useForm } from "react-hook-form";
 import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Grid, TextField } from "@mui/material";
 import { Job } from "../../../types";
-import { toDateInputValue } from "../../../utils/date";
+import { addBusinessDays, toDateInputValue } from "../../../utils/date";
 import { useStageSubmit } from "../useStageSubmit";
 
 interface FormValues {
+  plannedDisassemblyDate: string;
   evaluationDate: string;
   epirocQuotationDate: string;
   mcoNumber: string;
@@ -18,6 +19,10 @@ export function QuotationDialog({ job, onClose }: { job: Job; onClose: () => voi
 
   const { control, handleSubmit } = useForm<FormValues>({
     defaultValues: {
+      // Defaults to 3 business days after the job was opened, until set explicitly.
+      plannedDisassemblyDate:
+        toDateInputValue(job.quotation?.plannedDisassemblyDate) ||
+        addBusinessDays(toDateInputValue(job.jobCreatedDate), 3),
       evaluationDate: toDateInputValue(job.quotation?.evaluationDate),
       epirocQuotationDate: toDateInputValue(job.quotation?.epirocQuotationDate),
       mcoNumber: job.quotation?.mcoNumber ?? "",
@@ -49,10 +54,30 @@ export function QuotationDialog({ job, onClose }: { job: Job; onClose: () => voi
           )}
           <Grid item xs={12} sm={6}>
             <Controller
+              name="plannedDisassemblyDate"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  type="date"
+                  label="Planned Disassembly"
+                  fullWidth
+                  InputLabelProps={{ shrink: true }}
+                  helperText={
+                    !job.quotation?.plannedDisassemblyDate
+                      ? "Defaults to 3 business days after Job Opening"
+                      : undefined
+                  }
+                />
+              )}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6}>
+            <Controller
               name="evaluationDate"
               control={control}
               render={({ field }) => (
-                <TextField {...field} type="date" label="Evaluation Date" fullWidth InputLabelProps={{ shrink: true }} />
+                <TextField {...field} type="date" label="Actual Disassembly" fullWidth InputLabelProps={{ shrink: true }} />
               )}
             />
           </Grid>
@@ -64,7 +89,7 @@ export function QuotationDialog({ job, onClose }: { job: Job; onClose: () => voi
                 <TextField
                   {...field}
                   type="date"
-                  label="Epiroc Quotation Date"
+                  label="Date Quoted"
                   fullWidth
                   InputLabelProps={{ shrink: true }}
                 />
@@ -75,7 +100,7 @@ export function QuotationDialog({ job, onClose }: { job: Job; onClose: () => voi
             <Controller
               name="mcoNumber"
               control={control}
-              render={({ field }) => <TextField {...field} label="MCO Number" fullWidth />}
+              render={({ field }) => <TextField {...field} label="MCO Nr" fullWidth />}
             />
           </Grid>
           <Grid item xs={12} sm={6}>

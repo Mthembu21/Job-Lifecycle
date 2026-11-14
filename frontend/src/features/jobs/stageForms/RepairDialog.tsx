@@ -1,14 +1,32 @@
 import { Controller, useForm } from "react-hook-form";
-import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Grid, TextField } from "@mui/material";
+import {
+  Alert,
+  Button,
+  Checkbox,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControlLabel,
+  Grid,
+  TextField,
+} from "@mui/material";
 import { Job } from "../../../types";
-import { toDateInputValue } from "../../../utils/date";
+import { addBusinessDays, toDateInputValue } from "../../../utils/date";
 import { useStageSubmit } from "../useStageSubmit";
 
 interface FormValues {
   purchaseOrderNumber: string;
   purchaseOrderDate: string;
+  plannedAssemblyDate: string;
+  actualAssemblyDate: string;
   repairStartDate: string;
   repairCompletionDate: string;
+  outworkRequired: string;
+  supplierName: string;
+  outworkDateSent: string;
+  outworkDateReceived: string;
+  waitingForGoAhead: boolean;
   technicianName: string;
   labourHours: number | "";
   partsCost: number | "";
@@ -24,8 +42,18 @@ export function RepairDialog({ job, onClose }: { job: Job; onClose: () => void }
     defaultValues: {
       purchaseOrderNumber: job.repair?.purchaseOrderNumber ?? job.poNumber ?? "",
       purchaseOrderDate: toDateInputValue(job.repair?.purchaseOrderDate),
+      // Defaults to 7 business days after the job was quoted, until set explicitly.
+      plannedAssemblyDate:
+        toDateInputValue(job.repair?.plannedAssemblyDate) ||
+        addBusinessDays(toDateInputValue(job.quotation?.epirocQuotationDate), 7),
+      actualAssemblyDate: toDateInputValue(job.repair?.actualAssemblyDate),
       repairStartDate: toDateInputValue(job.repair?.repairStartDate),
       repairCompletionDate: toDateInputValue(job.repair?.repairCompletionDate),
+      outworkRequired: job.repair?.outworkRequired ?? "",
+      supplierName: job.repair?.supplierName ?? "",
+      outworkDateSent: toDateInputValue(job.repair?.outworkDateSent),
+      outworkDateReceived: toDateInputValue(job.repair?.outworkDateReceived),
+      waitingForGoAhead: job.repair?.waitingForGoAhead ?? false,
       technicianName: job.repair?.technicianName ?? "",
       labourHours: job.repair?.labourHours ? Number(job.repair.labourHours) : "",
       partsCost: job.repair?.partsCost ? Number(job.repair.partsCost) : "",
@@ -80,7 +108,36 @@ export function RepairDialog({ job, onClose }: { job: Job; onClose: () => void }
               name="purchaseOrderDate"
               control={control}
               render={({ field }) => (
-                <TextField {...field} type="date" label="Purchase Order Date" fullWidth InputLabelProps={{ shrink: true }} />
+                <TextField {...field} type="date" label="Go-Ahead To Repair" fullWidth InputLabelProps={{ shrink: true }} />
+              )}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6}>
+            <Controller
+              name="plannedAssemblyDate"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  type="date"
+                  label="Planned Assembly"
+                  fullWidth
+                  InputLabelProps={{ shrink: true }}
+                  helperText={
+                    !job.repair?.plannedAssemblyDate && job.quotation?.epirocQuotationDate
+                      ? "Defaults to 7 business days after Date Quoted"
+                      : undefined
+                  }
+                />
+              )}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6}>
+            <Controller
+              name="actualAssemblyDate"
+              control={control}
+              render={({ field }) => (
+                <TextField {...field} type="date" label="Actual Assembly" fullWidth InputLabelProps={{ shrink: true }} />
               )}
             />
           </Grid>
@@ -89,7 +146,7 @@ export function RepairDialog({ job, onClose }: { job: Job; onClose: () => void }
               name="repairStartDate"
               control={control}
               render={({ field }) => (
-                <TextField {...field} type="date" label="Repair Start Date" fullWidth InputLabelProps={{ shrink: true }} />
+                <TextField {...field} type="date" label="Start" fullWidth InputLabelProps={{ shrink: true }} />
               )}
             />
           </Grid>
@@ -101,9 +158,59 @@ export function RepairDialog({ job, onClose }: { job: Job; onClose: () => void }
                 <TextField
                   {...field}
                   type="date"
-                  label="Repair Completion Date"
+                  label="End"
                   fullWidth
                   InputLabelProps={{ shrink: true }}
+                />
+              )}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6}>
+            <Controller
+              name="outworkRequired"
+              control={control}
+              render={({ field }) => <TextField {...field} label="Outwork" fullWidth />}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6}>
+            <Controller
+              name="supplierName"
+              control={control}
+              render={({ field }) => <TextField {...field} label="Supplier Name" fullWidth />}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6}>
+            <Controller
+              name="outworkDateSent"
+              control={control}
+              render={({ field }) => (
+                <TextField {...field} type="date" label="Date Sent" fullWidth InputLabelProps={{ shrink: true }} />
+              )}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6}>
+            <Controller
+              name="outworkDateReceived"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  type="date"
+                  label="Date Received (Supplier)"
+                  fullWidth
+                  InputLabelProps={{ shrink: true }}
+                />
+              )}
+            />
+          </Grid>
+          <Grid item xs={12}>
+            <Controller
+              name="waitingForGoAhead"
+              control={control}
+              render={({ field }) => (
+                <FormControlLabel
+                  control={<Checkbox checked={field.value} onChange={(e) => field.onChange(e.target.checked)} />}
+                  label="Waiting For Go-Ahead"
                 />
               )}
             />

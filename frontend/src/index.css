@@ -1,0 +1,41 @@
+/*
+ * Tailwind theme + utilities only — Preflight (Tailwind's global CSS reset)
+ * is intentionally NOT imported here. MUI's <CssBaseline /> already resets
+ * the whole app (see src/theme/ThemeProvider.tsx), and every existing page
+ * still relies on MUI's own base styles. Running both resets together would
+ * subtly change native button/input appearance on every MUI page, which
+ * must stay untouched while the two systems coexist.
+ *
+ * Re-introduce `@import "tailwindcss/preflight.css" layer(base);` once MUI
+ * is fully removed from the app.
+ */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+/* Kept in sync by hand with src/theme/epirocBrand.ts — CSS can't import a
+   TS constant, so if those hex values ever change, update both places. */
+@theme {
+  --color-epiroc-yellow: #ffce00;
+  --color-epiroc-black: #1d1d1b;
+  --color-board-bg: #0b0e11;
+  --color-board-panel: #15191d;
+}
+
+@keyframes board-progress {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes board-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

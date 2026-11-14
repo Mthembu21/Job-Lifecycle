@@ -12,6 +12,7 @@ const router = Router({ mergeParams: true });
 
 const quotationSchema = z.object({
   evaluationDate: z.coerce.date().optional(),
+  plannedDisassemblyDate: z.coerce.date().optional(),
   epirocQuotationDate: z.coerce.date().optional(),
   mcoNumber: z.string().optional(),
   quotationAmount: z.number().nonnegative().optional(),
@@ -49,6 +50,31 @@ router.patch(
       action: "UPDATE",
       summary: diffSummary(before, updated),
       comment: data.comments ?? null,
+      changedById: req.user!.sub,
+    });
+
+    const fullJob = await prisma.job.findUnique({ where: { id: jobId }, include: jobListInclude });
+    res.json(toJobDto(fullJob!));
+  })
+);
+
+router.delete(
+  "/",
+  authenticate,
+  requireRole("PLANNER"),
+  asyncHandler(async (req, res) => {
+    const jobId = req.params.jobId;
+    const job = await prisma.job.findUnique({ where: { id: jobId }, include: { quotation: true } });
+    if (!job) throw new HttpError(404, "Job not found");
+    if (!job.quotation) throw new HttpError(404, "This job has no quotation to delete");
+
+    await prisma.quotation.delete({ where: { jobId } });
+
+    await writeAuditLog({
+      jobId,
+      stage: "QUOTATION",
+      action: "DELETE",
+      summary: "Quotation deleted",
       changedById: req.user!.sub,
     });
 

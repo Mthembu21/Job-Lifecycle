@@ -19,7 +19,7 @@ export function canCreateJob(role: Role | undefined): boolean {
 }
 
 export function canEditJobFields(role: Role | undefined): boolean {
-  return role === "STOREMAN" || role === "ADMIN";
+  return role === "STOREMAN" || role === "PLANNER" || role === "ADMIN";
 }
 
 export function canDeleteJob(role: Role | undefined): boolean {

@@ -9,6 +9,7 @@ import {
   Typography,
 } from "@mui/material";
 import EditIcon from "@mui/icons-material/Edit";
+import DeleteIcon from "@mui/icons-material/Delete";
 import { Job, StageName } from "../../types";
 import { SlaChip } from "../common/SlaChip";
 import { StageStatusChip } from "../common/StageStatusChip";
@@ -21,13 +22,22 @@ interface StepDef {
   key: StageName;
   label: string;
   editStage?: StageKey;
+  hasData?: boolean;
   completedDate: string | null | undefined;
   responsible: string | null | undefined;
   comments: string | null | undefined;
   delayReason: string | null | undefined;
 }
 
-export function StageTimeline({ job, onEdit }: { job: Job; onEdit: (stage: StageKey) => void }) {
+export function StageTimeline({
+  job,
+  onEdit,
+  onDelete,
+}: {
+  job: Job;
+  onEdit: (stage: StageKey) => void;
+  onDelete: (stage: StageKey) => void;
+}) {
   const { user } = useAuth();
 
   const steps: StepDef[] = [
@@ -35,7 +45,7 @@ export function StageTimeline({ job, onEdit }: { job: Job; onEdit: (stage: Stage
       key: "QUOTATION" as StageName,
       label: "Job Created",
       completedDate: job.jobCreatedDate,
-      responsible: job.createdBy ? "Storeman" : null,
+      responsible: job.createdBy?.name ?? null,
       comments: job.comments,
       delayReason: null,
     },
@@ -43,8 +53,9 @@ export function StageTimeline({ job, onEdit }: { job: Job; onEdit: (stage: Stage
       key: "QUOTATION",
       label: "Quotation",
       editStage: "quotation",
+      hasData: Boolean(job.quotation),
       completedDate: job.quotation?.epirocQuotationDate,
-      responsible: job.quotation?.quotedBy ? "Planner" : null,
+      responsible: job.quotation?.quotedBy?.name ?? null,
       comments: job.quotation?.comments,
       delayReason: job.quotation?.delayReason,
     },
@@ -52,6 +63,7 @@ export function StageTimeline({ job, onEdit }: { job: Job; onEdit: (stage: Stage
       key: "REPAIR",
       label: "Repair",
       editStage: "repair",
+      hasData: Boolean(job.repair),
       completedDate: job.repair?.repairCompletionDate,
       responsible: job.repair?.technicianName || null,
       comments: job.repair?.comments,
@@ -61,8 +73,9 @@ export function StageTimeline({ job, onEdit }: { job: Job; onEdit: (stage: Stage
       key: "DISPATCH",
       label: "Dispatch",
       editStage: "dispatch",
+      hasData: Boolean(job.dispatch),
       completedDate: job.dispatch?.dispatchDate,
-      responsible: job.dispatch?.dispatchedBy ? "Storeman" : null,
+      responsible: job.dispatch?.dispatchedBy?.name ?? null,
       comments: job.dispatch?.comments,
       delayReason: job.dispatch?.delayReason,
     },
@@ -70,6 +83,7 @@ export function StageTimeline({ job, onEdit }: { job: Job; onEdit: (stage: Stage
       key: "INVOICING",
       label: "Invoice",
       editStage: "invoice",
+      hasData: Boolean(job.invoice),
       completedDate: job.invoice?.invoiceDate,
       responsible: job.invoice?.invoiceNumber ? "Planner" : null,
       comments: job.invoice?.comments,
@@ -138,6 +152,11 @@ export function StageTimeline({ job, onEdit }: { job: Job; onEdit: (stage: Stage
                     <IconButton size="small" onClick={() => onEdit(step.editStage!)}>
                       <EditIcon fontSize="small" />
                     </IconButton>
+                    {step.hasData && (
+                      <IconButton size="small" onClick={() => onDelete(step.editStage!)}>
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    )}
                   </Box>
                 )}
               </Stack>

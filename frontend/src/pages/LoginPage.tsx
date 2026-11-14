@@ -32,8 +32,12 @@ export function LoginPage() {
     try {
       await login(email, password);
       navigate("/");
-    } catch {
-      setError("Invalid email or password");
+    } catch (err: unknown) {
+      const message =
+        err && typeof err === "object" && "response" in err && err.response && typeof err.response === "object" && "data" in err.response
+          ? (err.response as { data?: { error?: string } }).data?.error
+          : undefined;
+      setError(message ?? "Invalid email or password");
     } finally {
       setSubmitting(false);
     }

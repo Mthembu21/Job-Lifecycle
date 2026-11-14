@@ -14,6 +14,7 @@ const invoiceSchema = z.object({
   invoiceNumber: z.string().optional(),
   invoiceDate: z.coerce.date().optional(),
   invoiceAmount: z.number().nonnegative().optional(),
+  plannedClosingDate: z.coerce.date().optional(),
   closingDate: z.coerce.date().optional(),
   comments: z.string().optional(),
   delayReason: z.string().optional(),
@@ -58,6 +59,31 @@ router.patch(
       action: updated.closingDate ? "CLOSE" : "UPDATE",
       summary: diffSummary(before, updated),
       comment: data.comments ?? null,
+      changedById: req.user!.sub,
+    });
+
+    const fullJob = await prisma.job.findUnique({ where: { id: jobId }, include: jobListInclude });
+    res.json(toJobDto(fullJob!));
+  })
+);
+
+router.delete(
+  "/",
+  authenticate,
+  requireRole("PLANNER"),
+  asyncHandler(async (req, res) => {
+    const jobId = req.params.jobId;
+    const job = await prisma.job.findUnique({ where: { id: jobId }, include: { invoice: true } });
+    if (!job) throw new HttpError(404, "Job not found");
+    if (!job.invoice) throw new HttpError(404, "This job has no invoice to delete");
+
+    await prisma.invoice.delete({ where: { jobId } });
+
+    await writeAuditLog({
+      jobId,
+      stage: "INVOICING",
+      action: "DELETE",
+      summary: "Invoice deleted",
       changedById: req.user!.sub,
     });
 
