@@ -161,6 +161,17 @@ model Invoice {
   updatedAt          DateTime  @updatedAt
 }
 
+/// The customer list jobs are created against. One entry per customer, name in capitals with
+/// single spaces (see lib/customers.ts). Jobs keep the name as text (Job.customer), always one
+/// from this list for jobs created in the app.
+model Customer {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String   @unique
+  createdById String?  @db.ObjectId
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 model JobAuditLog {
   id          String   @id @default(auto()) @map("_id") @db.ObjectId
   jobId       String   @db.ObjectId

@@ -4,9 +4,12 @@ import { MulterError } from "multer";
 
 export class HttpError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  /** Extra fields sent with the error (e.g. `dateWarnings`). */
+  extra?: Record<string, unknown>;
+  constructor(status: number, message: string, extra?: Record<string, unknown>) {
     super(message);
     this.status = status;
+    this.extra = extra;
   }
 }
 
@@ -15,7 +18,7 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
     return res.status(400).json({ error: "Validation failed", details: err.flatten() });
   }
   if (err instanceof HttpError) {
-    return res.status(err.status).json({ error: err.message });
+    return res.status(err.status).json({ ...err.extra, error: err.message });
   }
   if (err instanceof MulterError) {
     const message = err.code === "LIMIT_FILE_SIZE" ? "File is too large" : "Upload rejected";

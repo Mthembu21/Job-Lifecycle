@@ -1,6 +1,6 @@
 import { Controller, useForm } from "react-hook-form";
 import { Job } from "../../../types";
-import { addBusinessDays, toDateInputValue } from "../../../utils/date";
+import { addBusinessDays, toDateInputValue, todayInputValue } from "../../../utils/date";
 import { useStageSubmit } from "../useStageSubmit";
 import { Checkbox, TextField } from "../../../components/ui";
 import { FormDialog } from "../../../components/FormDialog";
@@ -35,7 +35,7 @@ function FormSection({ children }: { children: string }) {
 }
 
 export function RepairDialog({ job, onClose }: { job: Job; onClose: () => void }) {
-  const { submit, error, requireDelayReason, submitting } = useStageSubmit(job.id, "repair", onClose);
+  const { submit, error, requireDelayReason, submitting, dateWarnings, saveLabel } = useStageSubmit(job.id, "repair", onClose);
 
   const { control, handleSubmit } = useForm<FormValues>({
     defaultValues: {
@@ -70,6 +70,8 @@ export function RepairDialog({ job, onClose }: { job: Job; onClose: () => void }
     <FormDialog
       title={`Repair Stage — ${job.referenceNumber}`}
       error={error}
+      dateWarnings={dateWarnings}
+      saveLabel={saveLabel}
       submitting={submitting}
       onSave={handleSubmit(onSubmit)}
       onClose={onClose}
@@ -91,7 +93,7 @@ export function RepairDialog({ job, onClose }: { job: Job; onClose: () => void }
       <Controller
         name="purchaseOrderDate"
         control={control}
-        render={({ field }) => <TextField {...field} type="date" label="Go-Ahead To Repair" />}
+        render={({ field }) => <TextField {...field} type="date" max={todayInputValue()} label="Go-Ahead To Repair" />}
       />
       <Controller
         name="waitingForGoAhead"
@@ -126,17 +128,17 @@ export function RepairDialog({ job, onClose }: { job: Job; onClose: () => void }
       <Controller
         name="actualAssemblyDate"
         control={control}
-        render={({ field }) => <TextField {...field} type="date" label="Actual Assembly" />}
+        render={({ field }) => <TextField {...field} type="date" max={todayInputValue()} label="Actual Assembly" />}
       />
       <Controller
         name="repairStartDate"
         control={control}
-        render={({ field }) => <TextField {...field} type="date" label="Start" />}
+        render={({ field }) => <TextField {...field} type="date" max={todayInputValue()} label="Start" />}
       />
       <Controller
         name="repairCompletionDate"
         control={control}
-        render={({ field }) => <TextField {...field} type="date" label="End" />}
+        render={({ field }) => <TextField {...field} type="date" max={todayInputValue()} label="End" />}
       />
       <Controller
         name="technicianName"
@@ -150,12 +152,12 @@ export function RepairDialog({ job, onClose }: { job: Job; onClose: () => void }
       <Controller
         name="outworkDateSent"
         control={control}
-        render={({ field }) => <TextField {...field} type="date" label="Date Sent" />}
+        render={({ field }) => <TextField {...field} type="date" max={todayInputValue()} label="Date Sent" />}
       />
       <Controller
         name="outworkDateReceived"
         control={control}
-        render={({ field }) => <TextField {...field} type="date" label="Date Received (Supplier)" />}
+        render={({ field }) => <TextField {...field} type="date" max={todayInputValue()} label="Date Received (Supplier)" />}
       />
 
       <FormSection>Costs &amp; notes</FormSection>

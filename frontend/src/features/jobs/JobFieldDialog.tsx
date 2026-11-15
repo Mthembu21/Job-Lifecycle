@@ -3,19 +3,15 @@ import { Controller, useForm } from "react-hook-form";
 import { Job } from "../../types";
 import { useUpdateJob } from "../../api/jobs";
 import { apiErrorMessage } from "../../api/client";
-import { toDateInputValue } from "../../utils/date";
+import { toDateInputValue, todayInputValue } from "../../utils/date";
 import { TextField } from "../../components/ui";
 import { FormDialog } from "../../components/FormDialog";
+import { useDateWarnings } from "./useDateWarnings";
 
 export type JobEditableField = "woNumber" | "poNumber" | "woNumberSetAt" | "jobCreatedDate";
 
 interface FormValues {
   value: string;
-}
-
-function todayInputValue() {
-  const now = new Date();
-  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
 }
 
 const DATE_FIELDS = new Set<JobEditableField>(["woNumberSetAt", "jobCreatedDate"]);
@@ -44,6 +40,7 @@ export function JobFieldDialog({
   onClose: () => void;
 }) {
   const updateJob = useUpdateJob(job.id);
+  const dates = useDateWarnings();
   const [error, setError] = useState<string | null>(null);
   const isDate = DATE_FIELDS.has(field);
 
@@ -54,9 +51,10 @@ export function JobFieldDialog({
   async function onSubmit(values: FormValues) {
     setError(null);
     try {
-      await updateJob.mutateAsync({ [field]: values.value.trim() });
+      await updateJob.mutateAsync(dates.withConfirmation({ [field]: values.value.trim() }));
       onClose();
     } catch (err) {
+      if (dates.handleError(err)) return;
       setError(apiErrorMessage(err, `Failed to save ${label}`));
     }
   }
@@ -67,6 +65,8 @@ export function JobFieldDialog({
       columns={1}
       title={`${label} — ${job.referenceNumber}`}
       error={error}
+      dateWarnings={dates.dateWarnings}
+      saveLabel={dates.saveLabel}
       submitting={updateJob.isPending}
       onSave={handleSubmit(onSubmit)}
       onClose={onClose}

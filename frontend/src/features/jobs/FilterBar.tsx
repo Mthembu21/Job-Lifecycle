@@ -1,7 +1,7 @@
 import { Search } from "lucide-react";
 import { JobFilters } from "../../api/jobs";
 import { JOB_TYPE_LABELS, PRIORITY_LABELS, STAGE_LABELS, STAGE_STATUS_LABELS } from "../../constants";
-import { Button, Card, TextField } from "../../components/ui";
+import { Badge, Button, Card, TextField } from "../../components/ui";
 
 interface FilterBarProps {
   filters: JobFilters;
@@ -29,7 +29,7 @@ export function FilterBar({ filters, onChange }: FilterBarProps) {
 
   return (
     <Card className="mb-4 p-4">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-[minmax(240px,2fr)_repeat(7,minmax(0,1fr))]">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-[minmax(240px,2fr)_repeat(9,minmax(0,1fr))]">
         <div className="relative col-span-2 sm:col-span-4 xl:col-span-1">
           <TextField
             label="Search"
@@ -57,6 +57,14 @@ export function FilterBar({ filters, onChange }: FilterBarProps) {
           <option value="">All</option>
           <option value="true">Missing WO</option>
         </TextField>
+        <TextField select label="Open / Closed" size="sm" value={filters.open ?? ""} onChange={(e) => set("open", e.target.value)}>
+          <option value="">All</option>
+          <option value="true">Open only</option>
+        </TextField>
+        <TextField select label="Dates" size="sm" value={filters.dateIssues ?? ""} onChange={(e) => set("dateIssues", e.target.value)}>
+          <option value="">All</option>
+          <option value="true">Dates to check</option>
+        </TextField>
         <TextField
           label="Created From"
           type="date"
@@ -72,6 +80,13 @@ export function FilterBar({ filters, onChange }: FilterBarProps) {
           onChange={(e) => set("createdTo", e.target.value)}
         />
       </div>
+      {filters.customerKey && (
+        <div className="mt-3">
+          <Badge tone="brand" onClick={() => set("customerKey", undefined)}>
+            Customer: {filters.customerKey} ✕
+          </Badge>
+        </div>
+      )}
       {hasFilters && (
         <div className="mt-3 flex justify-end">
           <Button size="sm" variant="ghost" onClick={() => onChange({})}>

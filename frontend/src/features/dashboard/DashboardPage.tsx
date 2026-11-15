@@ -7,6 +7,7 @@ import {
   Briefcase,
   Building2,
   CalendarClock,
+  CalendarX,
   CheckCircle2,
   ClipboardX,
   FileText,
@@ -28,10 +29,12 @@ import { MonthDetailCard } from "./MonthDetailCard";
 import { ForecastSection } from "./ForecastSection";
 import { PeriodPicker } from "./PeriodPicker";
 import { YearForecastSection } from "./YearForecastSection";
+import { CustomerBreakdown, DelayInsights, JobsLink } from "./DelayInsights";
+import { CustomerPicker } from "./CustomerPicker";
 import { currentMonthKey } from "../../utils/month";
 import { formatCurrency as currency } from "../../utils/currency";
 import { useAuth } from "../../auth/AuthContext";
-import { PageHeader, PageSpinner, SectionHeading, Segmented } from "../../components/ui";
+import { Alert, Button, PageHeader, PageSpinner, SectionHeading, Segmented } from "../../components/ui";
 
 type TrendView = "month" | "week";
 
@@ -45,7 +48,9 @@ export function DashboardPage() {
   // back/forward, and can be shared. Default: the current month.
   const [searchParams, setSearchParams] = useSearchParams();
   const selected = searchParams.get("period") ?? currentMonthKey();
-  const { data, isLoading, isPlaceholderData } = useDashboardSummary(selected);
+  // ?customer=<key> narrows every figure to one customer (the same view a customer manager will get).
+  const customer = searchParams.get("customer");
+  const { data, isLoading, isPlaceholderData } = useDashboardSummary(selected, customer);
   const { mode } = useThemeMode();
   const categorical = getCategoricalPalette(mode);
   const [jobsPeriod, setJobsPeriod] = useState<TrendView>("month");
@@ -55,12 +60,25 @@ export function DashboardPage() {
     return <Navigate to="/jobs" replace />;
   }
 
-  function selectPeriod(next: string) {
-    setSearchParams(next === currentMonthKey() ? {} : { period: next });
+  function setParams(next: { period?: string; customer?: string | null }) {
+    const period = next.period ?? selected;
+    const who = next.customer === undefined ? customer : next.customer;
+    setSearchParams({
+      ...(period !== currentMonthKey() && { period }),
+      ...(who && { customer: who }),
+    });
   }
+  const selectPeriod = (period: string) => setParams({ period });
+  const selectCustomer = (key: string | null) => {
+    setParams({ customer: key });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   const picker = (
-    <PeriodPicker value={selected} months={data?.availableMonths ?? []} years={data?.availableYears ?? []} onChange={selectPeriod} />
+    <div className="flex flex-wrap items-end gap-2">
+      <CustomerPicker value={customer} options={data?.filter.customers ?? []} onChange={selectCustomer} />
+      <PeriodPicker value={selected} months={data?.availableMonths ?? []} years={data?.availableYears ?? []} onChange={selectPeriod} />
+    </div>
   );
 
   if (isLoading || !data) {
@@ -72,7 +90,7 @@ export function DashboardPage() {
     );
   }
 
-  const { kpis, charts, period, monthDetail, forecast, yearForecast } = data;
+  const { kpis, charts, period, monthDetail, forecast, yearForecast, insights, filter } = data;
   const isMonth = period.kind === "month";
   const periodName = period.label;
   // Where the pipeline numbers are measured.
@@ -89,6 +107,12 @@ export function DashboardPage() {
   const invoiceTrend = financePeriod === "month" ? charts.invoiceValueByMonth : charts.invoiceValueByWeek;
   const jobValueTrend = financePeriod === "month" ? charts.jobValueByMonth : charts.jobValueByWeek;
 
+  // Tiles link to the job list behind their number. The list shows jobs as they are today, so
+  // pipeline links only appear while viewing the current period (otherwise the counts wouldn't match).
+  const jobsList = (params: Record<string, string>) =>
+    `/jobs?${new URLSearchParams({ ...params, ...(filter.customer && { customerKey: filter.customer.key }) })}`;
+  const jobsLink: JobsLink = (params) => (period.isCurrent ? jobsList(params) : undefined);
+
   return (
     // Dim only while switching months (old month shown as a placeholder), not on background refreshes.
     <div className={isPlaceholderData ? "opacity-70 transition-opacity" : "transition-opacity"}>
@@ -98,6 +122,20 @@ export function DashboardPage() {
       >
         {picker}
       </PageHeader>
+
+      {filter.customer && (
+        <Alert severity="info" className="mb-6">
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span>
+              Showing <strong>{filter.customer.name}</strong>'s jobs only. The invoice forecast is for the whole workshop, so
+              it's hidden here.
+            </span>
+            <Button size="sm" variant="ghost" onClick={() => selectCustomer(null)}>
+              Show all customers
+            </Button>
+          </span>
+        </Alert>
+      )}
 
       <SectionHeading>{periodName} activity</SectionHeading>
       {/* Tiles size to their content (amounts never cut off) and share the leftover space. */}
@@ -112,36 +150,71 @@ export function DashboardPage() {
           sub={`${kpis.closedInternalCount} internal · ${kpis.closedWarrantyCount} warranty`}
           icon={Building2}
         />
-        <StatTile label="Avg Turnaround Time" value={`${kpis.avgTurnaroundDays} days`} icon={Activity} />
-        <StatTile label="Avg Days to WO Number" value={`${kpis.avgDaysToWoNumber} days`} icon={CalendarClock} />
+        <StatTile
+          label="Avg Turnaround Time"
+          value={`${kpis.avgTurnaroundDays} days`}
+          sub={`Jobs closed in ${periodName}`}
+          icon={Activity}
+        />
+        <StatTile
+          label="Avg Days to WO Number"
+          value={`${kpis.avgDaysToWoNumber} days`}
+          sub={`WOs issued in ${periodName}`}
+          icon={CalendarClock}
+        />
       </div>
 
       <SectionHeading>Pipeline {asOfLabel}</SectionHeading>
       <div className="mb-8 flex flex-wrap gap-3 *:min-w-40 *:flex-[1_1_auto]">
-        <StatTile label="Waiting for Quotation" value={kpis.waitingForQuotation} icon={FileText} />
-        <StatTile label="Waiting for PO" value={kpis.waitingForPO} icon={Hourglass} />
-        <StatTile label="Jobs in Repair" value={kpis.inRepair} icon={Wrench} />
-        <StatTile label="Ready for Dispatch" value={kpis.readyForDispatch} icon={Truck} />
-        <StatTile label="Awaiting Invoice" value={kpis.awaitingInvoice} icon={Receipt} />
+        <StatTile label="Waiting for Quotation" value={kpis.waitingForQuotation} icon={FileText} to={jobsLink({ stage: "QUOTATION" })} />
+        <StatTile label="Waiting for PO" value={kpis.waitingForPO} icon={Hourglass} to={jobsLink({ stage: "AWAITING_PO" })} />
+        <StatTile label="Jobs in Repair" value={kpis.inRepair} icon={Wrench} to={jobsLink({ stage: "REPAIR" })} />
+        <StatTile label="Ready for Dispatch" value={kpis.readyForDispatch} icon={Truck} to={jobsLink({ stage: "DISPATCH" })} />
+        <StatTile label="Awaiting Invoice" value={kpis.awaitingInvoice} icon={Receipt} to={jobsLink({ stage: "INVOICING" })} />
         <StatTile
           label="Delayed Jobs"
           value={kpis.delayedJobs}
           icon={AlertTriangle}
           tone={kpis.delayedJobs > 0 ? "critical" : "default"}
+          to={jobsLink({ status: "DELAYED" })}
         />
-        <StatTile label="Open Job Value" value={currency(kpis.totalOpenJobValue)} icon={Banknote} />
+        <StatTile
+          label="Open Job Value"
+          value={currency(kpis.totalOpenJobValue)}
+          sub="To be invoiced · PO value, else quote"
+          icon={Banknote}
+        />
+        <StatTile
+          label="Open Warranty / Internal"
+          value={currency(kpis.openNonInvoicedValue)}
+          sub={`${kpis.openNonInvoicedCount} job${kpis.openNonInvoicedCount === 1 ? "" : "s"} · not invoiced`}
+          icon={Building2}
+        />
         <StatTile
           label="Awaiting WO Number"
           value={kpis.jobsAwaitingWoNumber}
           icon={ClipboardX}
           tone={kpis.jobsAwaitingWoNumber > 0 ? "warning" : "default"}
+          to={jobsLink({ missingWo: "true", open: "true" })}
+        />
+        <StatTile
+          label="Dates to Check"
+          value={kpis.jobsWithDateIssues}
+          sub="Jobs with dates out of order · today"
+          icon={CalendarX}
+          tone={kpis.jobsWithDateIssues > 0 ? "warning" : "good"}
+          to={kpis.jobsWithDateIssues > 0 ? jobsList({ dateIssues: "true" }) : undefined}
         />
       </div>
+
+      <DelayInsights insights={insights} asOfLabel={asOfLabel} jobsLink={jobsLink} />
 
       {forecast && <ForecastSection report={forecast} />}
       {yearForecast && <YearForecastSection data={yearForecast} onOpenMonth={selectPeriod} />}
 
       <MonthDetailCard detail={monthDetail} periodLabel={period.label} asOfLabel={asOfLabel} />
+
+      {!filter.customer && <CustomerBreakdown customers={insights.customers} periodName={periodName} onSelect={selectCustomer} />}
 
       <SectionHeading>Volume &amp; Financials</SectionHeading>
       <div className="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -236,6 +309,16 @@ export function DashboardPage() {
             valueFormatter={(v) => (v === null ? "" : `${v}%`)}
           />
         </ChartCard>
+        <div className="lg:col-span-2">
+          {/* Is turnaround getting better? Months with no closed jobs are a gap, not 0 days. */}
+          <ChartCard title={`Average Turnaround — ${trendTitle}`}>
+            <TrendLineChart
+              categories={charts.turnaroundByMonth.map((b) => b.label)}
+              series={[{ label: "Avg days, Job Opening to close", data: charts.turnaroundByMonth.map((b) => b.value), color: categorical[0] }]}
+              valueFormatter={(v) => (v === null ? "" : `${v} days`)}
+            />
+          </ChartCard>
+        </div>
       </div>
     </div>
   );

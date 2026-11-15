@@ -4,7 +4,9 @@ import { apiClient } from "./client";
 export interface ImportRowResult {
   referenceNumber: string;
   rowNumber: number;
-  outcome: "created" | "skipped_existing" | "skipped_duplicate";
+  outcome: "created" | "skipped_existing" | "skipped_duplicate" | "skipped_no_job_opening";
+  /** Date problems on a row that is imported anyway. */
+  warnings?: string[];
 }
 
 export interface ImportSummary {
@@ -12,6 +14,12 @@ export interface ImportSummary {
   created: number;
   skippedExisting: number;
   skippedDuplicate: number;
+  /** Rows with neither Job Opening nor Date Received — not imported. */
+  skippedNoJobOpening: number;
+  /** Imported rows that have date warnings. */
+  withWarnings: number;
+  /** Customers not on the customer list yet — added (in capitals) when the import runs. */
+  newCustomers: string[];
   rows: ImportRowResult[];
 }
 

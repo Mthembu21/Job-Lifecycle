@@ -1,4 +1,5 @@
 import { ReactNode } from "react";
+import { Link } from "react-router-dom";
 import type { LucideIcon } from "lucide-react";
 import { Card, cn } from "../../components/ui";
 
@@ -13,6 +14,8 @@ interface StatTileProps {
   sub?: ReactNode;
   /** Extra content under the value (e.g. a progress bar). */
   children?: ReactNode;
+  /** Makes the tile a link to the jobs behind its number. */
+  to?: string;
 }
 
 const ICON_TONE: Record<Tone, string> = {
@@ -29,9 +32,15 @@ const BORDER_TONE: Record<Tone, string | false> = {
   good: "border-l-4 border-l-success",
 };
 
-export function StatTile({ label, value, icon: Icon, tone = "default", sub, children }: StatTileProps) {
-  return (
-    <Card className={cn("flex h-full items-start justify-between gap-3 p-4", BORDER_TONE[tone])}>
+export function StatTile({ label, value, icon: Icon, tone = "default", sub, children, to }: StatTileProps) {
+  const tile = (
+    <Card
+      className={cn(
+        "flex h-full items-start justify-between gap-3 p-4",
+        BORDER_TONE[tone],
+        to && "transition-colors group-hover:border-yellow group-focus-visible:border-yellow"
+      )}
+    >
       <div className="min-w-0 flex-1">
         <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{label}</p>
         <p
@@ -49,5 +58,11 @@ export function StatTile({ label, value, icon: Icon, tone = "default", sub, chil
         </span>
       )}
     </Card>
+  );
+  if (!to) return tile;
+  return (
+    <Link to={to} className="group block rounded-xl focus-visible:outline-none" title={`${label} — show these jobs`}>
+      {tile}
+    </Link>
   );
 }

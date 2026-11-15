@@ -5,7 +5,8 @@ import { EmptyChartState } from "./ChartCard";
 
 interface Series {
   label: string;
-  data: number[];
+  /** null = no figure for that point (drawn as a gap). */
+  data: (number | null)[];
   color: string;
 }
 
@@ -22,18 +23,29 @@ export function TrendLineChart({ categories, series, height = 260, valueFormatte
   if (categories.length === 0) return <EmptyChartState />;
 
   const rows = categories.map((label, i) => {
-    const row: Record<string, string | number> = { label };
+    const row: Record<string, string | number | null> = { label };
     series.forEach((s, si) => (row[`s${si}`] = s.data[i]));
     return row;
   });
   const format = (v: unknown) => (valueFormatter ? valueFormatter(typeof v === "number" ? v : null) : String(v));
+  // Every bucket gets a label (Recharts would otherwise drop overlapping ones, which reads as a
+  // missing month). Month labels show just the month ("Sep 2026" → "Sep"): the period picker says
+  // which year, and the tooltip still shows the full "Sep 2026".
+  const shortLabel = (v: string) => v.replace(/^([A-Za-z]{3}) \d{4}$/, "$1");
 
   return (
     <div className="w-full min-w-[420px]" style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={rows} margin={{ top: 12, right: 16, bottom: 4, left: 4 }}>
           <CartesianGrid vertical={false} stroke={chrome.grid} />
-          <XAxis dataKey="label" tick={{ fill: chrome.text, fontSize: 12 }} stroke={chrome.axis} tickLine={false} />
+          <XAxis
+            dataKey="label"
+            interval={0}
+            tickFormatter={shortLabel}
+            tick={{ fill: chrome.text, fontSize: 12 }}
+            stroke={chrome.axis}
+            tickLine={false}
+          />
           <YAxis
             tick={{ fill: chrome.text, fontSize: 12 }}
             stroke={chrome.axis}

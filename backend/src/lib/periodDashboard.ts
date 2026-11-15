@@ -1,6 +1,7 @@
-import { JobDto, JobWithListRelations, toJobDto } from "../modules/jobs/jobs.dto";
+import { JobDto, JobWithListRelations, jobDateWarnings, toJobDto } from "../modules/jobs/jobs.dto";
 import { buildDashboardSummary, closedWithoutInvoiceKpis, wholeDaysBetween, weekKey } from "./analytics";
 import { jobAsOf } from "./asOf";
+import { buildInsights } from "./insights";
 import { JOB_TYPE_LABELS, SLA_STAGES, STAGE_LABELS, jobValue, toNumber } from "./labels";
 import { monthKeyOf, monthWindow, yearWindow } from "./months";
 
@@ -85,7 +86,7 @@ export function buildPeriodDashboard(rawJobs: JobWithListRelations[], period: Pe
   const quotedInPeriod = snapshot.filter((j) => inPeriod(j.quotation?.epirocQuotationDate));
 
   const invoicedValue = invoiced.reduce((s, j) => s + toNumber(j.invoice?.invoiceAmount), 0);
-  const receivedValue = received.reduce((s, j) => s + toNumber(j.poValue), 0);
+  const receivedValue = received.reduce((s, j) => s + jobValue(j), 0);
 
   const kpis = {
     ...base.kpis, // pipeline counts / open value / delayed / awaiting WO — as at month end
@@ -131,6 +132,7 @@ export function buildPeriodDashboard(rawJobs: JobWithListRelations[], period: Pe
       label: isCurrent ? "Open Job Value (today)" : `Open Job Value (${isMonth ? "month" : "year"} end)`,
       value: base.kpis.totalOpenJobValue,
     },
+    { label: "Open Warranty / Internal", value: base.kpis.openNonInvoicedValue },
   ];
 
   const byDateDesc = <T>(dateOf: (r: T) => string | null) => (a: T, b: T) => (dateOf(b) ?? "").localeCompare(dateOf(a) ?? "");
@@ -173,6 +175,8 @@ export function buildPeriodDashboard(rawJobs: JobWithListRelations[], period: Pe
         jobCreatedDate: iso(j.jobCreatedDate),
         currentStage: j.status.currentStage,
         poValue: toNumber(j.poValue),
+        // PO value, else the quotation amount — what "New Job Value" adds up.
+        value: jobValue(j),
       }))
       .sort(byDateDesc((r) => r.jobCreatedDate)),
     closedNoInvoice: closedNoInvoice
@@ -188,8 +192,12 @@ export function buildPeriodDashboard(rawJobs: JobWithListRelations[], period: Pe
       .sort(byDateDesc((r) => r.closingDate)),
   };
 
+  // Date problems are about the data as it is today, whatever period is being viewed.
+  const jobsWithDateIssues = rawJobs.filter((j) => jobDateWarnings(j).length > 0).length;
+
   return {
-    kpis,
+    kpis: { ...kpis, jobsWithDateIssues },
+    insights: buildInsights(snapshot, asOf, inPeriod),
     charts: { ...base.charts, jobsByType, avgDaysPerStage, quotationPerformance, valueBreakdown },
     period: {
       kind: period.kind,

@@ -13,6 +13,12 @@ export interface JobFilters {
   stage?: string;
   status?: string;
   missingWo?: string;
+  /** "true" = open (not closed) jobs only. */
+  open?: string;
+  /** "true" = jobs whose dates break the flow rules. */
+  dateIssues?: string;
+  /** One customer, matched however the name was typed (the dashboard's customer filter). */
+  customerKey?: string;
 }
 
 export function useJobs(filters: JobFilters) {
@@ -66,6 +72,8 @@ export interface CreateJobInput {
   priority: string;
   jobCreatedDate: string;
   comments?: string;
+  /** Create even though the dates look out of order (see useDateWarnings). */
+  confirmDateWarnings?: boolean;
 }
 
 export function useCreateJob() {
@@ -94,6 +102,10 @@ export function useUpdateJob(jobId: string) {
       forecastMonth?: string | null;
       forecastAmount?: number | null;
       jobType?: JobType;
+      /** A name from the customer list. */
+      customer?: string;
+      /** Save even though the dates look out of order (see useDateWarnings). */
+      confirmDateWarnings?: boolean;
     }) => {
       const { data } = await apiClient.patch<Job>(`/jobs/${jobId}`, input);
       return data;

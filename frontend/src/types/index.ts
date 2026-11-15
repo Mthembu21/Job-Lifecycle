@@ -138,6 +138,8 @@ export interface Job {
   createdAt: string;
   updatedAt: string;
   status: DerivedJobStatus;
+  /** Date problems in the job (same rules the forms enforce); empty when the dates are fine. */
+  dateWarnings: string[];
 }
 
 export interface AuditLogEntry {

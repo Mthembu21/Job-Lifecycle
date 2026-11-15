@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import { Alert, Button, Dialog, cn } from "./ui";
+import { DateWarningsAlert } from "../features/jobs/DateWarningsAlert";
 
 /**
  * A dialog wrapping a form: Cancel / Save buttons, an error and an optional warning banner, and
@@ -9,6 +10,8 @@ export function FormDialog({
   title,
   error,
   warning,
+  dateWarnings,
+  saveLabel,
   submitting,
   saveDisabled,
   onSave,
@@ -21,6 +24,10 @@ export function FormDialog({
   title: string;
   error: string | null;
   warning?: string | null;
+  /** Out-of-order dates the server reported (see useDateWarnings). */
+  dateWarnings?: string[] | null;
+  /** Replaces "Save" — e.g. "Save anyway" once date warnings are shown. */
+  saveLabel?: string;
   submitting: boolean;
   saveDisabled?: boolean;
   onSave: () => void;
@@ -45,7 +52,7 @@ export function FormDialog({
             Cancel
           </Button>
           <Button variant="primary" onClick={onSave} loading={submitting} disabled={saveDisabled}>
-            {submitting ? "Saving…" : "Save"}
+            {submitting ? "Saving…" : saveLabel ?? "Save"}
           </Button>
         </>
       }
@@ -62,6 +69,7 @@ export function FormDialog({
             {warning}
           </Alert>
         )}
+        <DateWarningsAlert warnings={dateWarnings ?? null} className={fullWidth} />
         {error && (
           <Alert severity="error" className={fullWidth}>
             {error}

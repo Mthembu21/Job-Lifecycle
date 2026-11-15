@@ -8,6 +8,7 @@ import { writeAuditLog, diffSummary } from "../../lib/audit";
 import { invoiceSla } from "../../lib/sla";
 import { isNonInvoicedJobType } from "../../lib/jobTypes";
 import { jobListInclude, toJobDto } from "../jobs/jobs.dto";
+import { checkJobDates, flowDatesOf, pickFlowDates } from "../../lib/dateRules";
 
 const router = Router({ mergeParams: true });
 
@@ -29,7 +30,7 @@ router.patch(
     const jobId = req.params.jobId;
     const job = await prisma.job.findUnique({
       where: { id: jobId },
-      include: { dispatch: true, invoice: true },
+      include: { quotation: true, repair: true, dispatch: true, invoice: true },
     });
     if (!job) throw new HttpError(404, "Job not found");
     if (!job.dispatch?.dispatchDate) {
@@ -57,6 +58,9 @@ router.patch(
       // Job auto-closes once invoicing is complete: default closingDate to invoiceDate if not supplied.
       write = { ...data, closingDate: data.closingDate ?? data.invoiceDate };
     }
+
+    // Checked on what will be written (an invoice date also sets the closing date).
+    checkJobDates(flowDatesOf(job), pickFlowDates(write), req.body);
 
     const sla = invoiceSla(job.dispatch.dispatchDate, completedOn);
     if (sla.status === "RED" && !(data.delayReason ?? job.invoice?.delayReason)) {

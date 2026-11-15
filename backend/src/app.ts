@@ -17,6 +17,7 @@ import dashboardRoutes from "./modules/dashboard/dashboard.routes";
 import forecastRoutes from "./modules/forecast/forecast.routes";
 import importExportRoutes from "./modules/importExport/importExport.routes";
 import boardRoutes from "./modules/board/board.routes";
+import customersRoutes from "./modules/customers/customers.routes";
 
 export function createApp() {
   const app = express();
@@ -46,6 +47,7 @@ export function createApp() {
 
   app.use("/api/auth", authRoutes);
   app.use("/api/users", usersRoutes);
+  app.use("/api/customers", customersRoutes);
   app.use("/api/jobs", jobsRoutes);
   app.use("/api/jobs/:jobId/quotation", quotationRoutes);
   app.use("/api/jobs/:jobId/repair", repairRoutes);

@@ -187,6 +187,8 @@ export function buildLegacySheetRow(row: unknown[]): Record<string, string | num
 
 export interface MappedSchedulerRow {
   referenceNumber: string;
+  /** The sheet had no Job Opening, so Date Received stands in for it (reported as a warning). */
+  jobOpeningFromDateReceived?: boolean;
   job: {
     description: string;
     partNumber?: string;
@@ -199,7 +201,8 @@ export interface MappedSchedulerRow {
     dateReceived?: Date;
     jobType: JobType;
     poValue: number;
-    jobCreatedDate: Date;
+    /** Job Opening, else Date Received. Undefined when the sheet has neither — the row is skipped. */
+    jobCreatedDate?: Date;
     comments?: string;
     // App-only columns (see scheduler.extras.ts)
     woNumber?: string;
@@ -263,10 +266,12 @@ export interface MappedSchedulerRow {
 
 export function mapSchedulerRow(row: unknown[]): MappedSchedulerRow {
   const referenceNumber = cellToString(row[COL.REFERENCE])!;
-  const jobCreatedDate = cellToDate(row[COL.JOB_OPENING]) ?? cellToDate(row[COL.DATE_RECEIVED]) ?? new Date();
+  // Never made up: with neither date in the sheet the importer skips the row and says so.
+  const jobCreatedDate = cellToDate(row[COL.JOB_OPENING]) ?? cellToDate(row[COL.DATE_RECEIVED]);
 
   const mapped: MappedSchedulerRow = {
     referenceNumber,
+    jobOpeningFromDateReceived: !cellToDate(row[COL.JOB_OPENING]) && !!jobCreatedDate,
     job: {
       description: cellToString(row[COL.DESCRIPTION]) ?? "",
       partNumber: cellToString(row[COL.PART_NR]),

@@ -7,6 +7,7 @@ import { requireRole } from "../../middleware/rbac";
 import { writeAuditLog, diffSummary } from "../../lib/audit";
 import { repairSla } from "../../lib/sla";
 import { jobListInclude, toJobDto } from "../jobs/jobs.dto";
+import { checkJobDates, flowDatesOf, pickFlowDates } from "../../lib/dateRules";
 
 const router = Router({ mergeParams: true });
 
@@ -36,10 +37,14 @@ router.patch(
   requireRole("PLANNER"),
   asyncHandler(async (req, res) => {
     const jobId = req.params.jobId;
-    const job = await prisma.job.findUnique({ where: { id: jobId }, include: { repair: true } });
+    const job = await prisma.job.findUnique({
+      where: { id: jobId },
+      include: { quotation: true, repair: true, dispatch: true, invoice: true },
+    });
     if (!job) throw new HttpError(404, "Job not found");
 
     const data = repairSchema.parse(req.body);
+    checkJobDates(flowDatesOf(job), pickFlowDates(data), req.body);
     const effectivePoDate = data.purchaseOrderDate ?? job.repair?.purchaseOrderDate ?? null;
     const effectiveCompletionDate = data.repairCompletionDate ?? job.repair?.repairCompletionDate ?? null;
     const sla = repairSla(effectivePoDate, effectiveCompletionDate);

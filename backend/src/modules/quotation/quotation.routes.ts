@@ -7,6 +7,7 @@ import { requireRole } from "../../middleware/rbac";
 import { writeAuditLog, diffSummary } from "../../lib/audit";
 import { quotationSla } from "../../lib/sla";
 import { jobListInclude, toJobDto } from "../jobs/jobs.dto";
+import { checkJobDates, flowDatesOf, pickFlowDates } from "../../lib/dateRules";
 
 const router = Router({ mergeParams: true });
 
@@ -26,10 +27,14 @@ router.patch(
   requireRole("PLANNER"),
   asyncHandler(async (req, res) => {
     const jobId = req.params.jobId;
-    const job = await prisma.job.findUnique({ where: { id: jobId }, include: { quotation: true } });
+    const job = await prisma.job.findUnique({
+      where: { id: jobId },
+      include: { quotation: true, repair: true, dispatch: true, invoice: true },
+    });
     if (!job) throw new HttpError(404, "Job not found");
 
     const data = quotationSchema.parse(req.body);
+    checkJobDates(flowDatesOf(job), pickFlowDates(data), req.body);
     const effectiveDate = data.epirocQuotationDate ?? job.quotation?.epirocQuotationDate ?? null;
     const sla = quotationSla(job.jobCreatedDate, effectiveDate);
     const hasDelayReason = data.delayReason ?? job.quotation?.delayReason;
@@ -64,9 +69,12 @@ router.delete(
   requireRole("PLANNER"),
   asyncHandler(async (req, res) => {
     const jobId = req.params.jobId;
-    const job = await prisma.job.findUnique({ where: { id: jobId }, include: { quotation: true } });
+    const job = await prisma.job.findUnique({ where: { id: jobId }, include: { quotation: true, repair: true } });
     if (!job) throw new HttpError(404, "Job not found");
     if (!job.quotation) throw new HttpError(404, "This job has no quotation to delete");
+    if (job.repair) {
+      throw new HttpError(400, "Delete this job's repair first — it follows the quotation");
+    }
 
     await prisma.quotation.delete({ where: { jobId } });
 

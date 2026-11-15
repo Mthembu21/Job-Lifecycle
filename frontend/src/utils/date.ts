@@ -31,3 +31,12 @@ export function addBusinessDays(dateInputValue: string, days: number): string {
   }
   return date.toISOString().slice(0, 10);
 }
+
+/**
+ * Today as a date input value ("YYYY-MM-DD") in the user's own time zone — the latest an actual
+ * date can be (the server enforces the same rule; see backend lib/dateRules.ts).
+ */
+export function todayInputValue(): string {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+}

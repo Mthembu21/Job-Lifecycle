@@ -14,6 +14,8 @@ import {
 import { locateExtraColumns } from "./scheduler.extras";
 import { ensureForecastsFrozen } from "../../lib/forecast";
 import { isNonInvoicedJobType } from "../../lib/jobTypes";
+import { dateOrderWarnings, flowDatesOf, futureDateProblems } from "../../lib/dateRules";
+import { customerGroupOf, findMatchingCustomer, normalizeCustomerName } from "../../lib/customers";
 
 
 /**
@@ -37,7 +39,9 @@ function findDataStartRow(rows: unknown[][]): number {
 export interface ImportRowResult {
   referenceNumber: string;
   rowNumber: number;
-  outcome: "created" | "skipped_existing" | "skipped_duplicate";
+  outcome: "created" | "skipped_existing" | "skipped_duplicate" | "skipped_no_job_opening";
+  /** Date problems on a row that is imported anyway (same rules as the forms — see lib/dateRules). */
+  warnings?: string[];
 }
 
 export interface ImportSummary {
@@ -45,7 +49,29 @@ export interface ImportSummary {
   created: number;
   skippedExisting: number;
   skippedDuplicate: number;
+  skippedNoJobOpening: number;
+  /** Imported rows that have date warnings. */
+  withWarnings: number;
+  /** Customers not on the customer list yet — added (in capitals) when the import runs. */
+  newCustomers: string[];
   rows: ImportRowResult[];
+}
+
+/** The sheet's customer as a customer-list name: an existing customer (near-copies included), else the capitalised name. */
+function resolveCustomer(raw: string, list: { name: string }[]): { name: string; isNew: boolean } | null {
+  // A site of a single-customer group ("SASOL SHONDONI") is that customer ("SASOL").
+  const name = customerGroupOf(raw) ?? normalizeCustomerName(raw);
+  if (!name || name === "UNKNOWN") return null;
+  const match = findMatchingCustomer(name, list);
+  return match ? { name: match.name, isNew: false } : { name, isNew: true };
+}
+
+/** The same checks the forms run, reported instead of blocking: the sheet is the record. */
+function rowDateWarnings(mapped: MappedSchedulerRow): string[] {
+  const dates = flowDatesOf({ ...mapped.job, ...mapped });
+  const warnings = [...futureDateProblems(dates), ...dateOrderWarnings(dates)];
+  if (mapped.jobOpeningFromDateReceived) warnings.unshift("No Job Opening in the sheet — Date Received was used");
+  return warnings;
 }
 
 async function planImport(buffer: Buffer): Promise<{ toCreate: MappedSchedulerRow[]; summary: ImportSummary }> {
@@ -58,6 +84,8 @@ async function planImport(buffer: Buffer): Promise<{ toCreate: MappedSchedulerRo
     .filter(({ row }) => rowHasJobData(row));
 
   const existingJobs = await prisma.job.findMany({ select: { referenceNumber: true } });
+  const customerList: { name: string }[] = await prisma.customer.findMany({ select: { name: true } });
+  const newCustomers: string[] = [];
   const existingRefs = new Set(existingJobs.map((j) => j.referenceNumber.trim().toUpperCase()));
 
   const seenInSheet = new Set<string>();
@@ -81,8 +109,28 @@ async function planImport(buffer: Buffer): Promise<{ toCreate: MappedSchedulerRo
       return;
     }
     seenInSheet.add(key);
+    if (!mapped.job.jobCreatedDate) {
+      results.push({ referenceNumber: mapped.referenceNumber, rowNumber, outcome: "skipped_no_job_opening" });
+      return;
+    }
+    // Customer names follow the customer list, same as the Create Job form.
+    const customer = resolveCustomer(mapped.job.customer, customerList);
+    if (customer) {
+      mapped.job.customer = customer.name;
+      if (customer.isNew) {
+        newCustomers.push(customer.name);
+        customerList.push({ name: customer.name }); // later rows with the same customer match it
+      }
+    }
     toCreate.push(mapped);
-    results.push({ referenceNumber: mapped.referenceNumber, rowNumber, outcome: "created" });
+    const warnings = rowDateWarnings(mapped);
+    if (!customer) warnings.unshift("No customer in the sheet");
+    results.push({
+      referenceNumber: mapped.referenceNumber,
+      rowNumber,
+      outcome: "created",
+      ...(warnings.length > 0 && { warnings }),
+    });
   });
 
   const summary: ImportSummary = {
@@ -90,6 +138,9 @@ async function planImport(buffer: Buffer): Promise<{ toCreate: MappedSchedulerRo
     created: toCreate.length,
     skippedExisting: results.filter((r) => r.outcome === "skipped_existing").length,
     skippedDuplicate: results.filter((r) => r.outcome === "skipped_duplicate").length,
+    skippedNoJobOpening: results.filter((r) => r.outcome === "skipped_no_job_opening").length,
+    withWarnings: results.filter((r) => r.warnings).length,
+    newCustomers,
     rows: results,
   };
 
@@ -106,6 +157,10 @@ export async function runSchedulerImport(
   opts: { createdById: string; priority?: Priority }
 ): Promise<ImportSummary> {
   const { toCreate, summary } = await planImport(buffer);
+  // New customers go on the list first (skipDuplicates-style: one that appeared meanwhile is fine).
+  for (const name of summary.newCustomers) {
+    await prisma.customer.upsert({ where: { name }, create: { name, createdById: opts.createdById }, update: {} });
+  }
   const defaultPriority = opts.priority ?? "MEDIUM";
   // Imported rows can carry forecasts — freeze any started month first (see lib/forecast.ts).
   await ensureForecastsFrozen();
@@ -133,8 +188,9 @@ export async function runSchedulerImport(
         customerAccount: job.customerAccount,
         dateReceived: job.dateReceived,
         woNumber: job.woNumber,
-        // A WO number with no recorded date counts as set on the job opening date.
-        woNumberSetAt: job.woNumber ? job.woNumberSetAt ?? job.jobCreatedDate : undefined,
+        // A WO number with no recorded date is left undated rather than assumed to be the job
+        // opening date — a made-up date would read as "WO on day 0" in the days-to-WO figures.
+        woNumberSetAt: job.woNumber ? job.woNumberSetAt : undefined,
         poNumber: job.poNumber,
         jobType: job.jobType,
         poValue: job.poValue,
@@ -142,7 +198,7 @@ export async function runSchedulerImport(
         // Internal / warranty jobs are never invoiced, so any forecast on them is dropped.
         forecastMonth: isNonInvoicedJobType(job.jobType) ? undefined : job.forecastMonth,
         forecastAmount: job.forecastMonth && !isNonInvoicedJobType(job.jobType) ? job.forecastAmount : undefined,
-        jobCreatedDate: job.jobCreatedDate,
+        jobCreatedDate: job.jobCreatedDate!, // rows without one were skipped in planImport
         comments: job.comments,
         isLegacyImport: true,
         legacySheetRow: mapped.legacySheetRow,

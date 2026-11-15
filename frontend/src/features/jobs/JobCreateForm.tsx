@@ -3,11 +3,20 @@ import { useNavigate } from "react-router-dom";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { useCreateJob, CreateJobInput } from "../../api/jobs";
 import { JOB_TYPE_LABELS, PRIORITY_LABELS } from "../../constants";
-import { addBusinessDays } from "../../utils/date";
+import { addBusinessDays, todayInputValue } from "../../utils/date";
 import { Alert, Button, Card, PageHeader, TextField } from "../../components/ui";
 import { apiErrorMessage } from "../../api/client";
+import { useDateWarnings } from "./useDateWarnings";
+import { DateWarningsAlert } from "./DateWarningsAlert";
+import { CustomerSelect } from "../customers/CustomerSelect";
 
-const TODAY = new Date().toISOString().slice(0, 10);
+const TODAY = todayInputValue();
+
+/** 3 business days after receipt — but an actual date, so never later than today. */
+function defaultJobOpening(dateReceived: string): string {
+  const planned = addBusinessDays(dateReceived, 3);
+  return planned > TODAY ? TODAY : planned;
+}
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -22,6 +31,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 export function JobCreateForm() {
   const navigate = useNavigate();
   const createJob = useCreateJob();
+  const dates = useDateWarnings();
   const [serverError, setServerError] = useState<string | null>(null);
 
   const [jobCreatedDateTouched, setJobCreatedDateTouched] = useState(false);
@@ -55,17 +65,17 @@ export function JobCreateForm() {
 
   const dateReceivedValue = useWatch({ control, name: "dateReceived" });
 
-  // Open Date defaults to 3 business days after the Receiving Date, until the
+  // Open Date defaults to 3 business days after the Receiving Date (capped at today), until the
   // user directly edits the Job Opening field.
   useEffect(() => {
     if (jobCreatedDateTouched || !dateReceivedValue) return;
-    setValue("jobCreatedDate", addBusinessDays(dateReceivedValue, 3));
+    setValue("jobCreatedDate", defaultJobOpening(dateReceivedValue));
   }, [dateReceivedValue, jobCreatedDateTouched, setValue]);
 
   async function onSubmit(values: CreateJobInput) {
     setServerError(null);
     try {
-      const job = await createJob.mutateAsync({
+      const job = await createJob.mutateAsync(dates.withConfirmation({
         ...values,
         poValue: Number(values.poValue),
         woNumber: values.woNumber?.trim() || undefined,
@@ -76,9 +86,10 @@ export function JobCreateForm() {
         customerRef: values.customerRef?.trim() || undefined,
         customerAccount: values.customerAccount?.trim() || undefined,
         dateReceived: values.dateReceived?.trim() || undefined,
-      });
+      }));
       navigate(`/jobs/${job.id}`);
     } catch (err) {
+      if (dates.handleError(err)) return;
       setServerError(apiErrorMessage(err, "Failed to create job"));
     }
   }
@@ -88,6 +99,7 @@ export function JobCreateForm() {
       <PageHeader title="Create New Job" subtitle="Fields marked * are required" />
       <Card>
         <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5 p-6">
+          <DateWarningsAlert warnings={dates.dateWarnings} />
           {serverError && <Alert severity="error">{serverError}</Alert>}
 
           <Section title="Customer & job">
@@ -109,15 +121,16 @@ export function JobCreateForm() {
             <Controller
               name="customer"
               control={control}
-              rules={{ required: "Customer is required" }}
+              rules={{ required: "Choose the customer from the list" }}
               render={({ field }) => (
-                <TextField
-                  {...field}
+                // From the customer list (search, or add a new one) — never free text, so every
+                // job for a customer carries exactly the same name.
+                <CustomerSelect
                   className="sm:col-span-3"
-                  label="Customer"
+                  value={field.value}
+                  onChange={field.onChange}
                   required
-                  error={!!errors.customer}
-                  helperText={errors.customer?.message}
+                  error={errors.customer?.message}
                 />
               )}
             />
@@ -247,7 +260,9 @@ export function JobCreateForm() {
             <Controller
               name="dateReceived"
               control={control}
-              render={({ field }) => <TextField {...field} className="sm:col-span-3" type="date" label="Date Received" />}
+              render={({ field }) => (
+                <TextField {...field} className="sm:col-span-3" type="date" max={TODAY} label="Date Received" />
+              )}
             />
             <Controller
               name="jobCreatedDate"
@@ -262,9 +277,10 @@ export function JobCreateForm() {
                     field.onChange(e);
                   }}
                   type="date"
+                  max={TODAY}
                   label="Job Opening"
                   required
-                  helperText="Defaults to 3 business days after Date Received"
+                  helperText="Defaults to 3 business days after Date Received (not later than today)"
                 />
               )}
             />
@@ -280,7 +296,7 @@ export function JobCreateForm() {
               Cancel
             </Button>
             <Button type="submit" variant="primary" loading={createJob.isPending}>
-              {createJob.isPending ? "Creating…" : "Create Job"}
+              {createJob.isPending ? "Creating…" : dates.dateWarnings ? "Create anyway" : "Create Job"}
             </Button>
           </div>
         </form>

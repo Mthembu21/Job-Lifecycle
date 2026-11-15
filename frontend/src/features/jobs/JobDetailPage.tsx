@@ -9,6 +9,7 @@ import { ForecastCard } from "./ForecastCard";
 import { JobTypeDialog } from "./JobTypeDialog";
 import { isNonInvoicedJobType } from "../../utils/jobTypes";
 import { JobFieldDialog, JobEditableField } from "./JobFieldDialog";
+import { JobCustomerDialog } from "./JobCustomerDialog";
 import { DeleteJobDialog } from "./DeleteJobDialog";
 import { DeleteStageDialog } from "./stageForms/DeleteStageDialog";
 import { QuotationDialog } from "./stageForms/QuotationDialog";
@@ -23,7 +24,7 @@ import { currentStageSla } from "../../utils/jobStatus";
 import { formatCurrency } from "../../utils/currency";
 import { useAuth } from "../../auth/AuthContext";
 import { canEditJobFields, canDeleteJob } from "../../auth/permissions";
-import { Badge, Button, Card, CardTitle, IconButton, PageHeader, PageSpinner } from "../../components/ui";
+import { Alert, Badge, Button, Card, CardTitle, IconButton, PageHeader, PageSpinner } from "../../components/ui";
 
 const FIELD_LABELS: Record<JobEditableField, string> = {
   woNumber: "WO Number",
@@ -42,6 +43,7 @@ export function JobDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [deletingStage, setDeletingStage] = useState<StageKey | null>(null);
   const [editingType, setEditingType] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState(false);
 
   if (isLoading || !job) return <PageSpinner />;
 
@@ -84,6 +86,18 @@ export function JobDetailPage() {
         </Badge>
       </PageHeader>
 
+      {job.dateWarnings.length > 0 && (
+        <Alert severity="warning" className="mb-4">
+          <p className="font-semibold">This job's dates need checking — they skew the dashboard until corrected:</p>
+          <ul className="mt-1 list-disc pl-5">
+            {job.dateWarnings.map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+          <p className="mt-1">Open the stage below to correct the date that's wrong.</p>
+        </Alert>
+      )}
+
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <SummaryTile label="Current Stage">{STAGE_LABELS[job.status.currentStage]}</SummaryTile>
         <SummaryTile label="Status">
@@ -106,6 +120,19 @@ export function JobDetailPage() {
                     {isNonInvoicedJobType(job.jobType) && <Badge tone="neutral">Not invoiced</Badge>}
                     {canEdit && (
                       <IconButton size="sm" label="Edit Service Type" onClick={() => setEditingType(true)}>
+                        <Pencil />
+                      </IconButton>
+                    )}
+                  </>
+                }
+              />
+              <DetailRow
+                label="Customer"
+                value={
+                  <>
+                    {job.customer}
+                    {canEdit && (
+                      <IconButton size="sm" label="Change customer" onClick={() => setEditingCustomer(true)}>
                         <Pencil />
                       </IconButton>
                     )}
@@ -181,6 +208,7 @@ export function JobDetailPage() {
       {activeDialog === "repair" && <RepairDialog job={job} onClose={() => setActiveDialog(null)} />}
       {activeDialog === "dispatch" && <DispatchDialog job={job} onClose={() => setActiveDialog(null)} />}
       {activeDialog === "invoice" && <InvoiceDialog job={job} onClose={() => setActiveDialog(null)} />}
+      {editingCustomer && <JobCustomerDialog job={job} onClose={() => setEditingCustomer(false)} />}
       {editingField && (
         <JobFieldDialog job={job} field={editingField} label={FIELD_LABELS[editingField]} onClose={() => setEditingField(null)} />
       )}

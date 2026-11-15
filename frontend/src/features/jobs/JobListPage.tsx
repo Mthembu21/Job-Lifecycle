@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { AlertTriangle, Pencil, Plus, Trash2 } from "lucide-react";
 import { useJobs, JobFilters } from "../../api/jobs";
 import { FilterBar } from "./FilterBar";
@@ -28,7 +28,12 @@ const PRIORITY_TONE: Record<Priority, BadgeTone> = {
 const TD = `${TD_BASE} whitespace-nowrap`;
 
 export function JobListPage() {
-  const [filters, setFilters] = useState<JobFilters>({});
+  // Filters live in the URL, so dashboard links open the exact jobs behind a number and a
+  // filtered list survives refresh / can be shared.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filters: JobFilters = Object.fromEntries(searchParams.entries());
+  const setFilters = (next: JobFilters) =>
+    setSearchParams(Object.fromEntries(Object.entries(next).filter(([, v]) => v)) as Record<string, string>, { replace: true });
   const { data: jobs, isLoading } = useJobs(filters);
   const { user } = useAuth();
   const navigate = useNavigate();

@@ -7,6 +7,7 @@ import { requireRole } from "../../middleware/rbac";
 import { writeAuditLog, diffSummary } from "../../lib/audit";
 import { dispatchSla } from "../../lib/sla";
 import { jobListInclude, toJobDto } from "../jobs/jobs.dto";
+import { checkJobDates, flowDatesOf, pickFlowDates } from "../../lib/dateRules";
 
 const router = Router({ mergeParams: true });
 
@@ -27,7 +28,7 @@ router.patch(
     const jobId = req.params.jobId;
     const job = await prisma.job.findUnique({
       where: { id: jobId },
-      include: { repair: true, dispatch: true },
+      include: { quotation: true, repair: true, dispatch: true, invoice: true },
     });
     if (!job) throw new HttpError(404, "Job not found");
     if (!job.repair?.repairCompletionDate) {
@@ -35,6 +36,7 @@ router.patch(
     }
 
     const data = dispatchSchema.parse(req.body);
+    checkJobDates(flowDatesOf(job), pickFlowDates(data), req.body);
     const effectiveDispatchDate = data.dispatchDate ?? job.dispatch?.dispatchDate ?? null;
     const sla = dispatchSla(job.repair.repairCompletionDate, effectiveDispatchDate);
     const hasDelayReason = data.delayReason ?? job.dispatch?.delayReason;

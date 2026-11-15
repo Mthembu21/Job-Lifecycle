@@ -39,6 +39,16 @@ apiClient.interceptors.response.use(
   }
 );
 
+/**
+ * The out-of-order date warnings the API sent back (409 `{ dateWarnings }`), or null when the error
+ * is anything else. The save goes through once it's resent with `confirmDateWarnings: true`.
+ */
+export function dateWarningsOf(err: unknown): string[] | null {
+  if (!axios.isAxiosError<{ dateWarnings?: string[] }>(err) || err.response?.status !== 409) return null;
+  const warnings = err.response.data?.dateWarnings;
+  return Array.isArray(warnings) && warnings.length > 0 ? warnings : null;
+}
+
 /** The error message the API sent back (`{ error }`), or `fallback` when there isn't one. */
 export function apiErrorMessage(err: unknown, fallback: string): string {
   return axios.isAxiosError<{ error?: string }>(err) ? err.response?.data?.error ?? fallback : fallback;

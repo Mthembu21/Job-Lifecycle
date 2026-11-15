@@ -1,47 +1,23 @@
-import { ReactNode, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState } from "react";
 import { MonthDetail } from "../../api/dashboard";
 import { JOB_TYPE_LABELS, STAGE_LABELS } from "../../constants";
 import { formatCurrency } from "../../utils/currency";
 import { formatDate } from "../../utils/date";
 import { Badge, Card, Segmented, cn } from "../../components/ui";
-import { EmptyRow, STICKY_THEAD, TH, TD as TD_BASE } from "../../components/ui/Table";
+import { EmptyRow, TH } from "../../components/ui/Table";
+import { DashboardTable as Table, TD, useJobRowLink } from "./DashboardTable";
 
 type Tab = "invoiced" | "awaitingPo" | "received" | "closedNoInvoice";
-
-const TD = `${TD_BASE} whitespace-nowrap`;
-
-function Table({ head, children, footer }: { head: ReactNode; children: ReactNode; footer?: ReactNode }) {
-  return (
-    <div className="max-h-[420px] overflow-auto rounded-lg border border-gray-200 dark:border-gray-800">
-      <table className="w-full text-sm">
-        <thead className={STICKY_THEAD}>
-          <tr>{head}</tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100 dark:divide-gray-800">{children}</tbody>
-        {footer && (
-          <tfoot className="sticky bottom-0 border-t-2 border-yellow bg-gray-50 font-semibold dark:bg-gray-800">
-            <tr>{footer}</tr>
-          </tfoot>
-        )}
-      </table>
-    </div>
-  );
-}
 
 /** The jobs behind the month's headline numbers: invoiced, waiting for PO, received,
  * closed without invoice. */
 export function MonthDetailCard({ detail, periodLabel, asOfLabel }: { detail: MonthDetail; periodLabel: string; asOfLabel: string }) {
   const [tab, setTab] = useState<Tab>("invoiced");
-  const navigate = useNavigate();
-  const row = (id: string) => ({
-    onClick: () => navigate(`/jobs/${id}`),
-    className: "cursor-pointer transition-colors hover:bg-yellow-soft/60 dark:hover:bg-yellow/5",
-  });
+  const row = useJobRowLink();
 
   const invoicedTotal = detail.invoiced.reduce((s, r) => s + r.invoiceAmount, 0);
   const awaitingTotal = detail.awaitingPo.reduce((s, r) => s + (r.quotationAmount || r.poValue), 0);
-  const receivedTotal = detail.received.reduce((s, r) => s + r.poValue, 0);
+  const receivedTotal = detail.received.reduce((s, r) => s + r.value, 0);
   const closedNoInvoiceTotal = detail.closedNoInvoice.reduce((s, r) => s + r.value, 0);
 
   return (
@@ -154,7 +130,9 @@ export function MonthDetailCard({ detail, periodLabel, asOfLabel }: { detail: Mo
               <th className={TH}>Job Type</th>
               <th className={TH}>Job Opening</th>
               <th className={TH}>Stage {asOfLabel}</th>
-              <th className={cn(TH, "text-right")}>Order Value</th>
+              <th className={cn(TH, "text-right")} title="Order value, else the quotation amount">
+                Value
+              </th>
             </>
           }
           footer={
@@ -178,7 +156,7 @@ export function MonthDetailCard({ detail, periodLabel, asOfLabel }: { detail: Mo
               <td className={TD}>
                 <Badge tone={r.currentStage === "CLOSED" ? "success" : "neutral"}>{STAGE_LABELS[r.currentStage]}</Badge>
               </td>
-              <td className={cn(TD, "text-right tabular-nums")}>{formatCurrency(r.poValue)}</td>
+              <td className={cn(TD, "text-right tabular-nums")}>{formatCurrency(r.value)}</td>
             </tr>
           ))}
         </Table>

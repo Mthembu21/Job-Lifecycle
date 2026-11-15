@@ -10,8 +10,20 @@ import { jobListInclude, toJobDto } from "./jobs.dto";
 import { ensureForecastsFrozen } from "../../lib/forecast";
 import { MONTH_KEY_RE, monthKeyOf } from "../../lib/months";
 import { hasPurchaseOrder, isNonInvoicedJobType } from "../../lib/jobTypes";
+import { checkJobDates, dayKey, flowDatesOf, pickFlowDates } from "../../lib/dateRules";
+import { customerKey } from "../../lib/insights";
+import { normalizeCustomerName } from "../../lib/customers";
 
 const router = Router();
+
+/** The customer-list entry a job's customer must be (Create Job and customer edits). */
+async function customerFromList(name: string) {
+  const customer = await prisma.customer.findUnique({ where: { name: normalizeCustomerName(name) } });
+  if (!customer) {
+    throw new HttpError(400, "Choose the customer from the list — or add them as a new customer first");
+  }
+  return customer;
+}
 
 const createJobSchema = z.object({
   referenceNumber: z.string().min(1),
@@ -19,6 +31,12 @@ const createJobSchema = z.object({
   customer: z.string().min(1),
   serialNumber: z.string().min(1),
   partNumber: z.string().optional(),
+  // These five were missing here, so the Create Job form's values were silently dropped.
+  machineNumber: z.string().optional(),
+  machineSerialNumber: z.string().optional(),
+  customerRef: z.string().optional(),
+  customerAccount: z.string().optional(),
+  dateReceived: z.coerce.date().optional(),
   woNumber: z.string().optional(),
   poNumber: z.string().optional(),
   jobType: z.nativeEnum(JobType),
@@ -39,9 +57,12 @@ const updateJobSchema = z
     // Invoice forecast (planner / admin only). null clears it.
     forecastMonth: z.string().regex(MONTH_KEY_RE, "Forecast month must be YYYY-MM").nullable().optional(),
     forecastAmount: z.number().nonnegative().nullable().optional(),
+    // Correcting the customer — must be a name from the customer list.
+    customer: z.string().min(1).optional(),
   })
   .refine(
     (data) =>
+      data.customer !== undefined ||
       data.woNumber !== undefined ||
       data.poNumber !== undefined ||
       data.woNumberSetAt !== undefined ||
@@ -63,10 +84,13 @@ router.post(
 
     const existing = await prisma.job.findUnique({ where: { referenceNumber: data.referenceNumber } });
     if (existing) throw new HttpError(409, "A job with this reference number already exists");
+    const customer = await customerFromList(data.customer);
+    checkJobDates({}, pickFlowDates(data), req.body);
 
     const job = await prisma.job.create({
       data: {
         ...data,
+        customer: customer.name,
         woNumberSetAt: data.woNumber ? new Date() : null,
         createdById: req.user!.sub,
       },
@@ -89,7 +113,7 @@ router.get(
   "/",
   authenticate,
   asyncHandler(async (req, res) => {
-    const { search, customer, createdById, jobType, priority, createdFrom, createdTo, stage, status, missingWo } =
+    const { search, customer, createdById, jobType, priority, createdFrom, createdTo, stage, status, missingWo, open, dateIssues, customerKey: customerExact } =
       req.query as Record<string, string | undefined>;
 
     const where: Prisma.JobWhereInput = {};
@@ -123,6 +147,10 @@ router.get(
 
     if (stage) dtos = dtos.filter((j) => j.status.currentStage === stage);
     if (status) dtos = dtos.filter((j) => j.status.currentStatus === status);
+    // Filters the dashboard links use, so a tile's number and the list behind it always match.
+    if (open === "true") dtos = dtos.filter((j) => !j.status.isClosed);
+    if (dateIssues === "true") dtos = dtos.filter((j) => j.dateWarnings.length > 0);
+    if (customerExact) dtos = dtos.filter((j) => customerKey(j.customer) === customerKey(customerExact));
 
     res.json(dtos);
   })
@@ -146,7 +174,10 @@ router.patch(
   authenticate,
   requireRole("STOREMAN", "PLANNER"),
   asyncHandler(async (req, res) => {
-    const job = await prisma.job.findUnique({ where: { id: req.params.id }, include: { invoice: true, repair: true } });
+    const job = await prisma.job.findUnique({
+      where: { id: req.params.id },
+      include: { quotation: true, repair: true, dispatch: true, invoice: true },
+    });
     if (!job) throw new HttpError(404, "Job not found");
 
     const data = updateJobSchema.parse(req.body);
@@ -186,27 +217,25 @@ router.patch(
       if (!job.woNumber && !data.woNumber) {
         throw new HttpError(400, "A WO number must be set before its date can be edited");
       }
-      // One day of slack so a user ahead of UTC can still pick their local "today".
-      if (data.woNumberSetAt.getTime() > Date.now() + 86_400_000) {
-        throw new HttpError(400, "WO number date cannot be in the future");
-      }
       const jobCreatedDateFloor = data.jobCreatedDate ?? job.jobCreatedDate;
-      if (data.woNumberSetAt.toISOString().slice(0, 10) < jobCreatedDateFloor.toISOString().slice(0, 10)) {
-        throw new HttpError(400, "WO number date cannot be before the job created date");
+      if (dayKey(data.woNumberSetAt) < dayKey(jobCreatedDateFloor)) {
+        throw new HttpError(400, "WO number date cannot be before the Job Opening date");
       }
     }
 
     if (data.jobCreatedDate !== undefined) {
-      if (data.jobCreatedDate.getTime() > Date.now() + 86_400_000) {
-        throw new HttpError(400, "Job created date cannot be in the future");
-      }
       const woNumberSetAtCeiling = data.woNumberSetAt ?? job.woNumberSetAt;
-      if (woNumberSetAtCeiling && data.jobCreatedDate.toISOString().slice(0, 10) > woNumberSetAtCeiling.toISOString().slice(0, 10)) {
-        throw new HttpError(400, "Job created date cannot be after the WO number date");
+      if (woNumberSetAtCeiling && dayKey(data.jobCreatedDate) > dayKey(woNumberSetAtCeiling)) {
+        throw new HttpError(400, "Job Opening cannot be after the WO number date");
       }
     }
 
+    // Same date rules as every other form: no future dates; out-of-order dates need confirming.
+    checkJobDates(flowDatesOf(job), pickFlowDates(data), req.body);
+    const customer = data.customer !== undefined ? await customerFromList(data.customer) : null;
+
     const before = {
+      customer: job.customer,
       woNumber: job.woNumber,
       poNumber: job.poNumber,
       woNumberSetAt: job.woNumberSetAt,
@@ -219,6 +248,7 @@ router.patch(
     const updated = await prisma.job.update({
       where: { id: job.id },
       data: {
+        ...(customer && { customer: customer.name }),
         ...(data.woNumber !== undefined && {
           woNumber: data.woNumber,
           woNumberSetAt: job.woNumberSetAt ?? new Date(),
@@ -240,6 +270,7 @@ router.patch(
       stage: "JOB",
       action: "UPDATE",
       summary: diffSummary(before, {
+        customer: updated.customer,
         woNumber: updated.woNumber,
         poNumber: updated.poNumber,
         // Only log the date when it was edited by hand, not when auto-stamped with a new WO number.

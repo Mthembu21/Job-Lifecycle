@@ -70,6 +70,12 @@ export function DataImportExportPage() {
   }
 
   const skippedRows = preview?.rows.filter((r) => r.outcome !== "created") ?? [];
+  const warningRows = preview?.rows.filter((r) => r.outcome === "created" && r.warnings) ?? [];
+  const skipReason: Record<string, string> = {
+    skipped_existing: "Already in app",
+    skipped_duplicate: "Duplicate reference in sheet",
+    skipped_no_job_opening: "No Job Opening or Date Received — add one in the sheet and import again",
+  };
 
   return (
     <div className="flex max-w-3xl flex-col gap-4">
@@ -127,7 +133,18 @@ export function DataImportExportPage() {
                 <Badge tone="success">{preview.created} new jobs to add</Badge>
                 <Badge>{preview.skippedExisting} already in app</Badge>
                 {preview.skippedDuplicate > 0 && <Badge tone="warning">{preview.skippedDuplicate} duplicate rows in sheet</Badge>}
+                {preview.skippedNoJobOpening > 0 && (
+                  <Badge tone="warning">{preview.skippedNoJobOpening} skipped — no Job Opening</Badge>
+                )}
+                {preview.withWarnings > 0 && <Badge tone="warning">{preview.withWarnings} with dates to check</Badge>}
               </div>
+              {preview.newCustomers.length > 0 && (
+                <p className="mb-2 text-sm text-gray-600 dark:text-gray-400">
+                  New customers that will be added to the customer list: <strong>{preview.newCustomers.join(", ")}</strong>. If
+                  one of these is an existing customer spelt differently, correct the sheet first (or rename it on the
+                  Customers page afterwards).
+                </p>
+              )}
               <p className="text-sm text-gray-600 dark:text-gray-400">
                 Click "Import" to add the {preview.created} new jobs to the database.
               </p>
@@ -138,7 +155,9 @@ export function DataImportExportPage() {
             <Alert severity="success" className="mt-4">
               Import complete: {imported.created} new jobs added, {imported.skippedExisting} already existed and were left
               unchanged
-              {imported.skippedDuplicate > 0 ? `, ${imported.skippedDuplicate} duplicate rows skipped` : ""}.
+              {imported.skippedDuplicate > 0 ? `, ${imported.skippedDuplicate} duplicate rows skipped` : ""}
+              {imported.skippedNoJobOpening > 0 ? `, ${imported.skippedNoJobOpening} skipped for having no Job Opening` : ""}.
+              {imported.withWarnings > 0 && ` ${imported.withWarnings} imported jobs have dates to check — see the list below.`}
             </Alert>
           )}
         </Card>
@@ -169,9 +188,31 @@ export function DataImportExportPage() {
                 <p className="text-sm font-medium">
                   {r.referenceNumber} (sheet row {r.rowNumber})
                 </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {r.outcome === "skipped_existing" ? "Already in app" : "Duplicate reference in sheet"}
+                <p className="text-xs text-gray-500 dark:text-gray-400">{skipReason[r.outcome]}</p>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
+      {warningRows.length > 0 && (
+        <Card className="p-6">
+          <CardTitle>Dates to check after importing</CardTitle>
+          <p className="mb-2 text-sm text-gray-600 dark:text-gray-400">
+            These rows are imported as they are in the sheet, but their dates break the job flow. Correct them on the job
+            page afterwards so the dashboard reads them correctly.
+          </p>
+          <ul className="max-h-80 divide-y divide-gray-100 overflow-auto dark:divide-gray-800">
+            {warningRows.map((r) => (
+              <li key={`${r.rowNumber}-${r.referenceNumber}`} className="py-2">
+                <p className="text-sm font-medium">
+                  {r.referenceNumber} (sheet row {r.rowNumber})
                 </p>
+                <ul className="list-disc pl-5 text-xs text-gray-500 dark:text-gray-400">
+                  {r.warnings!.map((w) => (
+                    <li key={w}>{w}</li>
+                  ))}
+                </ul>
               </li>
             ))}
           </ul>

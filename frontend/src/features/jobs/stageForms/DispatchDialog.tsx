@@ -1,6 +1,6 @@
 import { Controller, useForm } from "react-hook-form";
 import { Job } from "../../../types";
-import { toDateInputValue } from "../../../utils/date";
+import { toDateInputValue, todayInputValue } from "../../../utils/date";
 import { useStageSubmit } from "../useStageSubmit";
 import { TextField } from "../../../components/ui";
 import { FormDialog } from "../../../components/FormDialog";
@@ -16,7 +16,7 @@ interface FormValues {
 }
 
 export function DispatchDialog({ job, onClose }: { job: Job; onClose: () => void }) {
-  const { submit, error, requireDelayReason, submitting } = useStageSubmit(job.id, "dispatch", onClose);
+  const { submit, error, requireDelayReason, submitting, dateWarnings, saveLabel } = useStageSubmit(job.id, "dispatch", onClose);
 
   const { control, handleSubmit } = useForm<FormValues>({
     defaultValues: {
@@ -39,6 +39,8 @@ export function DispatchDialog({ job, onClose }: { job: Job; onClose: () => void
     <FormDialog
       title={`Dispatch Stage — ${job.referenceNumber}`}
       error={error}
+      dateWarnings={dateWarnings}
+      saveLabel={saveLabel}
       warning={repairNotDone ? "Repair has not been marked complete yet — dispatch cannot be saved until it is." : null}
       submitting={submitting}
       saveDisabled={repairNotDone}
@@ -53,7 +55,7 @@ export function DispatchDialog({ job, onClose }: { job: Job; onClose: () => void
       <Controller
         name="dispatchDate"
         control={control}
-        render={({ field }) => <TextField {...field} type="date" label="Actual Dispatch Date" />}
+        render={({ field }) => <TextField {...field} type="date" max={todayInputValue()} label="Actual Dispatch Date" />}
       />
       <Controller name="courier" control={control} render={({ field }) => <TextField {...field} label="Courier" />} />
       <Controller

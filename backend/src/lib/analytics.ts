@@ -1,6 +1,7 @@
 import { JobDto } from "../modules/jobs/jobs.dto";
 import { JOB_TYPE_LABELS, SLA_STAGES, STAGE_LABELS, STAGE_ORDER, jobValue, toNumber } from "./labels";
 import { monthKeyOf } from "./months";
+import { isNonInvoicedJobType } from "./jobTypes";
 
 interface Bucket {
   label: string;
@@ -108,7 +109,14 @@ export function buildDashboardSummary(jobs: JobDto[], opts: SummaryOptions = {})
   const atStage = (stage: string) => jobs.filter((j) => j.status.currentStage === stage).length;
   const sumOf = (xs: JobDto[], valueOf: (j: JobDto) => number) => xs.reduce((sum, j) => sum + valueOf(j), 0);
 
-  const totalOpenJobValue = sumOf(openJobs, (j) => toNumber(j.poValue));
+  // Job values use the PO value, else the quotation amount (jobValue). Open value counts only jobs
+  // that will be invoiced; internal / warranty work in progress is reported on its own.
+  const openNonInvoiced = openJobs.filter((j) => isNonInvoicedJobType(j.jobType));
+  const totalOpenJobValue = sumOf(
+    openJobs.filter((j) => !isNonInvoicedJobType(j.jobType)),
+    jobValue
+  );
+  const openNonInvoicedValue = sumOf(openNonInvoiced, jobValue);
   const totalInvoicedValue = sumOf(jobs, (j) => toNumber(j.invoice?.invoiceAmount));
 
   const kpis = {
@@ -124,6 +132,8 @@ export function buildDashboardSummary(jobs: JobDto[], opts: SummaryOptions = {})
     ...closedWithoutInvoiceKpis(closedJobs.filter((j) => j.status.closedWithoutInvoice)),
     delayedJobs: jobs.filter((j) => j.status.currentStatus === "DELAYED").length,
     totalOpenJobValue,
+    openNonInvoicedCount: openNonInvoiced.length,
+    openNonInvoicedValue,
     totalInvoicedValue,
     avgTurnaroundDays: average(closedJobs.map((j) => j.status.totalJobAge)),
     slaCompliancePercent:
@@ -147,7 +157,8 @@ export function buildDashboardSummary(jobs: JobDto[], opts: SummaryOptions = {})
 
   const valueBreakdown: Bucket[] = [
     { label: "Open Job Value", value: totalOpenJobValue },
-    { label: "Closed Job Value", value: sumOf(closedJobs, (j) => toNumber(j.poValue)) },
+    { label: "Open Warranty / Internal", value: openNonInvoicedValue },
+    { label: "Closed Job Value", value: sumOf(closedJobs, jobValue) },
     { label: "Repair Value", value: sumOf(jobs, (j) => toNumber(j.repair?.totalRepairCost ?? j.repair?.partsCost)) },
     { label: "Invoiced Value", value: totalInvoicedValue },
   ];
@@ -158,12 +169,19 @@ export function buildDashboardSummary(jobs: JobDto[], opts: SummaryOptions = {})
   const createdWeek = (j: JobDto) => weekKey(new Date(j.jobCreatedDate));
   const invoicedMonth = (j: JobDto) => (j.invoice?.invoiceDate ? monthKeyOf(new Date(j.invoice.invoiceDate)) : null);
   const invoicedWeek = (j: JobDto) => (j.invoice?.invoiceDate ? weekKey(new Date(j.invoice.invoiceDate)) : null);
-  const poValue = (j: JobDto) => toNumber(j.poValue);
   const invoiceAmount = (j: JobDto) => toNumber(j.invoice?.invoiceAmount);
 
   const quotationStats = jobs
     .map((j) => j.status.stages.find((s) => s.name === "QUOTATION"))
     .filter((s) => s && s.status === "COMPLETED");
+
+  // Average turnaround (Job Opening → close) of the jobs that closed in each month.
+  const turnaroundByMonth = monthKeys.map((key) => {
+    const closedThen = closedJobs.filter((j) => j.status.closedOn && monthKeyOf(new Date(j.status.closedOn)) === key);
+    // No jobs closed = no figure (a gap in the chart), not "0 days".
+    const value = closedThen.length ? average(closedThen.map((j) => j.status.totalJobAge)) : null;
+    return { label: monthLabel(key), value, jobs: closedThen.length };
+  });
 
   const slaComplianceTrend = lastNMonthKeys(6, anchor).map((key) => {
     const bucketJobs = jobs.filter((j) => createdMonth(j) === key);
@@ -181,9 +199,9 @@ export function buildDashboardSummary(jobs: JobDto[], opts: SummaryOptions = {})
       avgDaysPerStage,
       valueBreakdown,
       invoiceValueByMonth: trendSeries(jobs, monthKeys, monthLabel, invoicedMonth, invoiceAmount),
-      jobValueByMonth: trendSeries(jobs, monthKeys, monthLabel, createdMonth, poValue),
+      jobValueByMonth: trendSeries(jobs, monthKeys, monthLabel, createdMonth, jobValue),
       invoiceValueByWeek: trendSeries(jobs, weekKeys, weekLabel, invoicedWeek, invoiceAmount),
-      jobValueByWeek: trendSeries(jobs, weekKeys, weekLabel, createdWeek, poValue),
+      jobValueByWeek: trendSeries(jobs, weekKeys, weekLabel, createdWeek, jobValue),
       jobsInvoicedByMonth: trendSeries(jobs, monthKeys, monthLabel, invoicedMonth),
       jobsInvoicedByWeek: trendSeries(jobs, weekKeys, weekLabel, invoicedWeek),
       quotationPerformance: {
@@ -191,6 +209,7 @@ export function buildDashboardSummary(jobs: JobDto[], opts: SummaryOptions = {})
         outsideSla: quotationStats.filter((s) => s!.sla.status === "RED").length,
       },
       slaComplianceTrend,
+      turnaroundByMonth,
     },
   };
 }

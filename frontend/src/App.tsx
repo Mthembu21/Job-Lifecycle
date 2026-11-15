@@ -15,6 +15,7 @@ const DataImportExportPage = lazy(() =>
 );
 const BoardPage = lazy(() => import("./features/board/BoardPage").then((m) => ({ default: m.BoardPage })));
 const ForecastPage = lazy(() => import("./features/forecast/ForecastPage").then((m) => ({ default: m.ForecastPage })));
+const CustomersPage = lazy(() => import("./features/customers/CustomersPage").then((m) => ({ default: m.CustomersPage })));
 
 function HomeRedirect() {
   const { user } = useAuth();
@@ -34,6 +35,7 @@ export function App() {
           <Route path="/jobs/:id" element={<JobDetailPage />} />
           <Route path="/admin/data" element={<DataImportExportPage />} />
           <Route path="/forecast" element={<ForecastPage />} />
+          <Route path="/customers" element={<CustomersPage />} />
           <Route path="/" element={<HomeRedirect />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

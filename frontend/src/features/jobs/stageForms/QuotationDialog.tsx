@@ -1,6 +1,6 @@
 import { Controller, useForm } from "react-hook-form";
 import { Job } from "../../../types";
-import { addBusinessDays, toDateInputValue } from "../../../utils/date";
+import { addBusinessDays, toDateInputValue, todayInputValue } from "../../../utils/date";
 import { useStageSubmit } from "../useStageSubmit";
 import { TextField } from "../../../components/ui";
 import { FormDialog } from "../../../components/FormDialog";
@@ -17,7 +17,7 @@ interface FormValues {
 }
 
 export function QuotationDialog({ job, onClose }: { job: Job; onClose: () => void }) {
-  const { submit, error, requireDelayReason, submitting } = useStageSubmit(job.id, "quotation", onClose);
+  const { submit, error, requireDelayReason, submitting, dateWarnings, saveLabel } = useStageSubmit(job.id, "quotation", onClose);
 
   const { control, handleSubmit } = useForm<FormValues>({
     defaultValues: {
@@ -42,6 +42,8 @@ export function QuotationDialog({ job, onClose }: { job: Job; onClose: () => voi
     <FormDialog
       title={`Quotation Stage — ${job.referenceNumber}`}
       error={error}
+      dateWarnings={dateWarnings}
+      saveLabel={saveLabel}
       submitting={submitting}
       onSave={handleSubmit(onSubmit)}
       onClose={onClose}
@@ -61,12 +63,12 @@ export function QuotationDialog({ job, onClose }: { job: Job; onClose: () => voi
       <Controller
         name="evaluationDate"
         control={control}
-        render={({ field }) => <TextField {...field} type="date" label="Actual Disassembly" />}
+        render={({ field }) => <TextField {...field} type="date" max={todayInputValue()} label="Actual Disassembly" />}
       />
       <Controller
         name="epirocQuotationDate"
         control={control}
-        render={({ field }) => <TextField {...field} type="date" label="Date Quoted" />}
+        render={({ field }) => <TextField {...field} type="date" max={todayInputValue()} label="Date Quoted" />}
       />
       <Controller name="mcoNumber" control={control} render={({ field }) => <TextField {...field} label="MCO Nr" />} />
       <Controller

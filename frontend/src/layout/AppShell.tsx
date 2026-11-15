@@ -1,6 +1,6 @@
 import { ReactNode, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { ArrowDownUp, Briefcase, CalendarCheck, ExternalLink, KeyRound, LayoutDashboard, LogOut, Moon, Sun } from "lucide-react";
+import { ArrowDownUp, Briefcase, Building2, CalendarCheck, ExternalLink, KeyRound, LayoutDashboard, LogOut, Moon, Sun } from "lucide-react";
 import { canEditForecast, canSeeBoardLink, canUseDataImportExport } from "../auth/permissions";
 import type { LucideIcon } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
@@ -78,6 +78,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <nav className="flex flex-col gap-1">
           {user?.role !== "STOREMAN" && <NavItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />}
           <NavItem to="/jobs" icon={Briefcase} label="Jobs" />
+          <NavItem to="/customers" icon={Building2} label="Customers" />
           {canEditForecast(user?.role) && <NavItem to="/forecast" icon={CalendarCheck} label="Forecast" />}
           {canUseDataImportExport(user?.role) && <NavItem to="/admin/data" icon={ArrowDownUp} label="Import / Export" />}
           {canSeeBoardLink(user?.role) && (
@@ -94,6 +95,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <nav className="fixed inset-x-0 top-16 z-30 flex gap-1 overflow-x-auto border-b border-gray-200 bg-white px-3 py-2 md:hidden dark:border-gray-800 dark:bg-gray-900">
         {user?.role !== "STOREMAN" && <NavItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />}
         <NavItem to="/jobs" icon={Briefcase} label="Jobs" />
+          <NavItem to="/customers" icon={Building2} label="Customers" />
         {canEditForecast(user?.role) && <NavItem to="/forecast" icon={CalendarCheck} label="Forecast" />}
         {canUseDataImportExport(user?.role) && <NavItem to="/admin/data" icon={ArrowDownUp} label="Import / Export" />}
       </nav>

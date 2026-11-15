@@ -1,6 +1,6 @@
 import { Controller, useForm } from "react-hook-form";
 import { Job } from "../../../types";
-import { toDateInputValue } from "../../../utils/date";
+import { toDateInputValue, todayInputValue } from "../../../utils/date";
 import { formatCurrency } from "../../../utils/currency";
 import { defaultForecastAmount } from "../../../utils/forecast";
 import { isNonInvoicedJobType } from "../../../utils/jobTypes";
@@ -25,7 +25,7 @@ interface FormValues {
  * internal and warranty jobs are never invoiced, so the same step just closes them.
  */
 export function InvoiceDialog({ job, onClose }: { job: Job; onClose: () => void }) {
-  const { submit, error, requireDelayReason, submitting } = useStageSubmit(job.id, "invoice", onClose);
+  const { submit, error, requireDelayReason, submitting, dateWarnings, saveLabel } = useStageSubmit(job.id, "invoice", onClose);
   const noInvoice = isNonInvoicedJobType(job.jobType);
 
   const { control, handleSubmit } = useForm<FormValues>({
@@ -54,6 +54,8 @@ export function InvoiceDialog({ job, onClose }: { job: Job; onClose: () => void 
     <FormDialog
       title={`${noInvoice ? "Close Job" : "Invoicing Stage"} — ${job.referenceNumber}`}
       error={error}
+      dateWarnings={dateWarnings}
+      saveLabel={saveLabel}
       warning={
         dispatchNotDone
           ? `This job has not been dispatched yet — it can't be ${noInvoice ? "closed" : "invoiced"} until it is.`
@@ -81,7 +83,7 @@ export function InvoiceDialog({ job, onClose }: { job: Job; onClose: () => void 
           <Controller
             name="invoiceDate"
             control={control}
-            render={({ field }) => <TextField {...field} type="date" label="Invoice Date" />}
+            render={({ field }) => <TextField {...field} type="date" max={todayInputValue()} label="Invoice Date" />}
           />
           <Controller
             name="invoiceAmount"
@@ -103,6 +105,7 @@ export function InvoiceDialog({ job, onClose }: { job: Job; onClose: () => void 
           <TextField
             {...field}
             type="date"
+            max={todayInputValue()}
             label={noInvoice ? "Closing Date" : "Actual Job Closing"}
             required={noInvoice}
             error={!!fieldState.error}

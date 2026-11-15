@@ -1,5 +1,12 @@
 import { Prisma } from "@prisma/client";
 import { deriveJobStatus } from "../../lib/statusEngine";
+import { dateOrderWarnings, flowDatesOf, futureDateProblems } from "../../lib/dateRules";
+
+/** Date problems in a job as it is (same rules the forms enforce) — what the cleanup works from. */
+export function jobDateWarnings(job: Parameters<typeof flowDatesOf>[0]): string[] {
+  const dates = flowDatesOf(job);
+  return [...futureDateProblems(dates), ...dateOrderWarnings(dates)];
+}
 
 export type JobWithListRelations = Prisma.JobGetPayload<{ include: typeof jobListInclude }>;
 
@@ -41,6 +48,7 @@ export function toJobDto(job: JobWithListRelations, asOf?: Date) {
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
     status: derived,
+    dateWarnings: jobDateWarnings(job),
   };
 }
 

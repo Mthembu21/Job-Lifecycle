@@ -32,12 +32,18 @@ export interface DashboardSummary {
     closedWarrantyCount: number;
     closedWarrantyValue: number;
     delayedJobs: number;
+    /** Open jobs that will be invoiced: PO value, else quotation amount. */
     totalOpenJobValue: number;
+    /** Open internal / warranty jobs (never invoiced), valued the same way. */
+    openNonInvoicedCount: number;
+    openNonInvoicedValue: number;
     totalInvoicedValue: number;
     avgTurnaroundDays: number;
     slaCompliancePercent: number;
     jobsAwaitingWoNumber: number;
     avgDaysToWoNumber: number;
+    /** Jobs whose dates break the flow rules, as the data is today (any period). */
+    jobsWithDateIssues: number;
   };
   charts: {
     jobsCreatedByMonth: ChartBucket[];
@@ -54,6 +60,8 @@ export interface DashboardSummary {
     jobsInvoicedByWeek: ChartBucket[];
     quotationPerformance: { withinSla: number; outsideSla: number };
     slaComplianceTrend: ChartBucket[];
+    /** Average Job Opening → close of jobs closed each month; null when none closed. */
+    turnaroundByMonth: { label: string; value: number | null; jobs: number }[];
   };
 }
 
@@ -117,6 +125,8 @@ export interface MonthReceivedRow {
   jobCreatedDate: string | null;
   currentStage: StageName;
   poValue: number;
+  /** PO value, else quotation amount. */
+  value: number;
 }
 
 export interface MonthClosedNoInvoiceRow {
@@ -206,14 +216,17 @@ export interface DashboardResponse extends DashboardSummary {
   availableMonths: string[];
   /** "YYYY", newest first */
   availableYears: string[];
+  insights: Insights;
+  /** The customer the dashboard is narrowed to (null = all), and every customer to choose from. */
+  filter: { customer: CustomerOption | null; customers: CustomerOption[] };
 }
 
-/** `period` is a month ("2026-10") or a year ("2026"). */
-export function useDashboardSummary(period: string) {
+/** `period` is a month ("2026-10") or a year ("2026"); `customer` (a customer key) narrows it to one customer. */
+export function useDashboardSummary(period: string, customer?: string | null) {
   return useQuery({
-    queryKey: ["dashboard", "summary", period],
+    queryKey: ["dashboard", "summary", period, customer ?? null],
     queryFn: async () => {
-      const params = period.length === 4 ? { year: period } : { month: period };
+      const params = { ...(period.length === 4 ? { year: period } : { month: period }), ...(customer ? { customer } : {}) };
       const { data } = await apiClient.get<DashboardResponse>("/dashboard/summary", { params });
       return data;
     },
@@ -304,4 +317,48 @@ export function useAssignForecast(month: string) {
         queryClient.invalidateQueries({ queryKey: ["forecast"] }),
       ]),
   });
+}
+
+export interface CustomerOption {
+  /** Normalised name — what the `customer` filter takes. */
+  key: string;
+  /** The spelling used most often. */
+  name: string;
+}
+
+/** "Where are the delays, and why?" — see backend lib/insights.ts. Pipeline figures are as at period end. */
+export interface Insights {
+  delaysByStage: { stage: StageName; label: string; total: number; delayed: number; targetDays: number | null }[];
+  /** Open jobs by days in their current stage. */
+  waitingTime: ChartBucket[];
+  /** Open jobs furthest past their stage target (top 15). */
+  overdue: {
+    id: string;
+    referenceNumber: string;
+    customer: string;
+    stage: StageName;
+    daysInStage: number;
+    targetDays: number;
+    daysOver: number;
+    delayReason: string | null;
+    value: number;
+  }[];
+  overdueCount: number;
+  delayReasons: { reason: string; count: number; stages: string[] }[];
+  /** Late open jobs with no delay reason recorded for their current stage. */
+  lateWithoutReason: number;
+  outwork: {
+    atSupplier: { id: string; referenceNumber: string; customer: string; supplier: string; sentDate: string | null; daysOut: number }[];
+    count: number;
+  };
+  awaitingWo: { id: string; referenceNumber: string; customer: string; stage: StageName; jobCreatedDate: string | null; daysWaiting: number }[];
+  customers: {
+    key: string;
+    customer: string;
+    openJobs: number;
+    delayedJobs: number;
+    awaitingPo: number;
+    openValue: number;
+    invoicedValue: number;
+  }[];
 }

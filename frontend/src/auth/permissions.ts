@@ -40,3 +40,13 @@ export function canUseDataImportExport(role: Role | undefined): boolean {
 export function canSeeBoardLink(role: Role | undefined): boolean {
   return role !== "STOREMAN";
 }
+
+/** Adding a customer to the customer list (same people who create or edit jobs). Mirrors the backend. */
+export function canAddCustomer(role: Role | undefined): boolean {
+  return role === "STOREMAN" || role === "PLANNER" || role === "ADMIN";
+}
+
+/** Renaming a customer changes every one of its jobs, so it's kept to planners and admins. */
+export function canRenameCustomer(role: Role | undefined): boolean {
+  return role === "PLANNER" || role === "ADMIN";
+}
