@@ -256,7 +256,7 @@ router.patch(
 );
 
 const bulkDeleteSchema = z.object({
-  ids: z.array(z.string().min(1)).min(1),
+  ids: z.array(z.string().regex(/^[0-9a-f]{24}$/i, "Invalid id")).min(1).max(2000),
 });
 
 router.delete(

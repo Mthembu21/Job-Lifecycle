@@ -35,6 +35,8 @@ model User {
   name         String
   email        String   @unique
   passwordHash String
+  /// Bumped on password change; tokens carrying an older version stop working.
+  tokenVersion Int      @default(0)
   role         Role
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

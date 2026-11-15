@@ -104,9 +104,9 @@ router.get(
 
 const assignSchema = z.object({
   /** Jobs to forecast for this month, with the amount. */
-  set: z.array(z.object({ jobId: objectId, amount: z.number().nonnegative() })).default([]),
+  set: z.array(z.object({ jobId: objectId, amount: z.number().nonnegative().max(1e10) })).max(2000).default([]),
   /** Jobs to take out of this month's forecast (ignored if they're forecast for another month). */
-  clear: z.array(objectId).default([]),
+  clear: z.array(objectId).max(2000).default([]),
 });
 
 /**

@@ -36,7 +36,7 @@ export function canUseDataImportExport(role: Role | undefined): boolean {
   return role === "PLANNER" || role === "ADMIN";
 }
 
-/** The TV board link in the menu (the board itself is a public screen). */
+/** The TV board link in the menu (opens with the session; the TV itself uses the key link). */
 export function canSeeBoardLink(role: Role | undefined): boolean {
   return role !== "STOREMAN";
 }

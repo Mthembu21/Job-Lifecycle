@@ -16,6 +16,14 @@ services:
         value: 8h
       - key: CORS_ORIGIN
         sync: false
+      - key: NODE_ENV
+        value: production
+      # Render sits one proxy in front of the app; needed so login rate limits see real client IPs.
+      - key: TRUST_PROXY
+        value: "1"
+      # Secret for the TV screen link (/board?key=...).
+      - key: BOARD_ACCESS_KEY
+        generateValue: true
 
   - type: web
     name: job-lifecycle-frontend
@@ -27,6 +35,23 @@ services:
     envVars:
       - key: VITE_API_URL
         sync: false
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      # Never send page URLs (e.g. the TV link with its key) to other sites.
+      - path: /*
+        name: Referrer-Policy
+        value: no-referrer
+      - path: /*
+        name: Strict-Transport-Security
+        value: max-age=31536000; includeSubDomains
+      - path: /*
+        name: Permissions-Policy
+        value: camera=(), microphone=(), geolocation=()
     routes:
       - type: rewrite
         source: /*

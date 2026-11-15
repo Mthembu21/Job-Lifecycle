@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
+import { MulterError } from "multer";
 
 export class HttpError extends Error {
   status: number;
@@ -15,6 +16,15 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
   }
   if (err instanceof HttpError) {
     return res.status(err.status).json({ error: err.message });
+  }
+  if (err instanceof MulterError) {
+    const message = err.code === "LIMIT_FILE_SIZE" ? "File is too large" : "Upload rejected";
+    return res.status(err.code === "LIMIT_FILE_SIZE" ? 413 : 400).json({ error: message });
+  }
+  // body-parser errors (malformed JSON, body too large) carry a 4xx status; don't echo their details.
+  const status = (err as { status?: unknown })?.status;
+  if (typeof status === "number" && status >= 400 && status < 500) {
+    return res.status(status).json({ error: status === 413 ? "Request too large" : "Bad request" });
   }
   console.error(err);
   return res.status(500).json({ error: "Internal server error" });

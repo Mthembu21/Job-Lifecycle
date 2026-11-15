@@ -7,6 +7,7 @@ export interface AuthUserLike {
   email: string;
   role: Role;
   passwordHash: string;
+  tokenVersion: number;
 }
 
 interface ResolveLoginUserInput {
@@ -14,41 +15,14 @@ interface ResolveLoginUserInput {
   password: string;
   findUserByEmail: (email: string) => Promise<AuthUserLike | null>;
   comparePassword: (password: string, passwordHash: string) => Promise<boolean>;
-  fallbackUser?: AuthUserLike | null;
 }
 
-const DEMO_PASSWORD = process.env.DEMO_PASSWORD ?? "Password123!";
+/** Minimum length for any password set in the app or by script. */
+export const MIN_PASSWORD_LENGTH = 12;
 
-const fallbackUsers: AuthUserLike[] = [
-  {
-    id: "demo-admin",
-    name: "Alex Admin",
-    email: "admin@demo.local",
-    role: "ADMIN",
-    passwordHash: bcrypt.hashSync(DEMO_PASSWORD, 10),
-  },
-  {
-    id: "demo-storeman",
-    name: "Sipho Storeman",
-    email: "storeman@demo.local",
-    role: "STOREMAN",
-    passwordHash: bcrypt.hashSync(DEMO_PASSWORD, 10),
-  },
-  {
-    id: "demo-planner",
-    name: "Component Planner",
-    email: "planner@demo.local",
-    role: "PLANNER",
-    passwordHash: bcrypt.hashSync(DEMO_PASSWORD, 10),
-  },
-  {
-    id: "demo-supervisor",
-    name: "Sam Supervisor",
-    email: "supervisor@demo.local",
-    role: "SUPERVISOR",
-    passwordHash: bcrypt.hashSync(DEMO_PASSWORD, 10),
-  },
-];
+// Compared against when the email doesn't exist, so a wrong email takes as long as a wrong
+// password — response time can't be used to discover which emails have accounts.
+const DUMMY_HASH = bcrypt.hashSync("not-a-real-password-just-equalises-timing", 10);
 
 function isDatabaseUnavailableError(error: unknown): boolean {
   return (
@@ -82,39 +56,30 @@ async function findUserWithRetry(
   }
 }
 
+/**
+ * Returns the user if the email and password match, otherwise null. There is deliberately no
+ * fallback: if the database can't be reached, login fails rather than letting anyone in.
+ */
 export async function resolveLoginUser({
   email,
   password,
   findUserByEmail,
   comparePassword,
-  fallbackUser,
 }: ResolveLoginUserInput): Promise<AuthUserLike | null> {
-  try {
-    const user = await findUserWithRetry(email, findUserByEmail);
-    if (!user) return null;
-
-    const valid = await comparePassword(password, user.passwordHash);
-    return valid ? user : null;
-  } catch (error) {
-    if (isDatabaseUnavailableError(error)) {
-      const normalizedEmail = email.toLowerCase();
-      const matchesFallback =
-        fallbackUser?.email.toLowerCase() === normalizedEmail ||
-        fallbackUsers.some((candidate) => candidate.email.toLowerCase() === normalizedEmail);
-
-      if (matchesFallback && password === DEMO_PASSWORD) {
-        console.warn(`[auth] database unavailable after retries, using fallback account for ${email}`);
-        return fallbackUser ?? fallbackUsers.find((candidate) => candidate.email.toLowerCase() === normalizedEmail) ?? null;
-      }
-
-      console.error(`[auth] database unavailable after retries, no fallback match for ${email}`);
-    }
-
-    throw error;
+  const user = await findUserWithRetry(email, findUserByEmail);
+  if (!user) {
+    await comparePassword(password, DUMMY_HASH);
+    return null;
   }
+  return (await comparePassword(password, user.passwordHash)) ? user : null;
 }
 
-export function getFallbackUser(email: string): AuthUserLike | null {
-  const normalizedEmail = email.toLowerCase();
-  return fallbackUsers.find((candidate) => candidate.email.toLowerCase() === normalizedEmail) ?? null;
+/** Checks a new password against the policy; returns a message if it's not acceptable. */
+export function passwordProblem(password: string, email?: string): string | null {
+  if (password.length < MIN_PASSWORD_LENGTH) return `Use at least ${MIN_PASSWORD_LENGTH} characters`;
+  if (/^(password|epiroc|welcome|changeme)\d*!?$/i.test(password)) return "That password is too easy to guess";
+  if (email && password.toLowerCase().includes(email.split("@")[0].toLowerCase())) {
+    return "Don't include your username in the password";
+  }
+  return null;
 }

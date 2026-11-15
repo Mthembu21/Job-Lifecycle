@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import axios from "axios";
 import { BoardJob, useBoardJobs } from "../../api/board";
 import { BoardJobCard } from "./BoardJobCard";
 import { STAGE_LABELS } from "../../constants";
@@ -20,7 +21,8 @@ function useClock() {
 }
 
 export function BoardPage() {
-  const { data: jobs, isLoading, dataUpdatedAt } = useBoardJobs();
+  const { data: jobs, isLoading, dataUpdatedAt, error } = useBoardJobs();
+  const accessDenied = axios.isAxiosError(error) && error.response?.status === 401;
   const now = useClock();
 
   const byStage = useMemo(() => {
@@ -122,6 +124,13 @@ export function BoardPage() {
       <div className="min-h-0 flex-1 px-8 pb-8">
         {isLoading ? (
           <p className="mt-16 text-center text-xl text-gray-500">Loading…</p>
+        ) : accessDenied ? (
+          <div className="mx-auto mt-16 max-w-xl text-center">
+            <p className="text-2xl font-bold text-gray-800">This screen isn't authorised</p>
+            <p className="mt-2 text-lg text-gray-500">
+              Open the board with the TV screen link from an admin, or sign in first.
+            </p>
+          </div>
         ) : (
           <div
             key={currentStage ?? "empty"}

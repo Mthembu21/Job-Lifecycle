@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import { apiErrorMessage } from "../api/client";
 import { Alert, Button, Logo, TextField } from "../components/ui";
 
 export function LoginPage() {
@@ -21,11 +22,7 @@ export function LoginPage() {
       await login(email, password);
       navigate("/");
     } catch (err: unknown) {
-      const message =
-        err && typeof err === "object" && "response" in err && err.response && typeof err.response === "object" && "data" in err.response
-          ? (err.response as { data?: { error?: string } }).data?.error
-          : undefined;
-      setError(message ?? "Invalid email or password");
+      setError(apiErrorMessage(err, "Invalid email or password"));
     } finally {
       setSubmitting(false);
     }

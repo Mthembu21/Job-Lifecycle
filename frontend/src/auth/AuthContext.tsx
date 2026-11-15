@@ -14,6 +14,8 @@ interface AuthContextValue {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  /** Changes the password; other sessions are signed out, this one continues. */
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -44,12 +46,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(data.user);
   }
 
+  async function changePassword(currentPassword: string, newPassword: string) {
+    const { data } = await apiClient.post<{ token: string; user: AuthUser }>("/auth/change-password", {
+      currentPassword,
+      newPassword,
+    });
+    setStoredToken(data.token);
+    setUser(data.user);
+  }
+
   function logout() {
     setStoredToken(null);
     setUser(null);
   }
 
-  return <AuthContext.Provider value={{ user, loading, login, logout }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, loading, login, logout, changePassword }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthContextValue {

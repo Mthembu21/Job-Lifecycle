@@ -6,7 +6,14 @@ import { asyncHandler, HttpError } from "../../middleware/errorHandler";
 import { exportSchedulerWorkbook, previewSchedulerImport, runSchedulerImport } from "./scheduler.service";
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 5 },
+  fileFilter: (_req, file, cb) => {
+    if (/\.xlsx$/i.test(file.originalname)) cb(null, true);
+    else cb(new HttpError(400, "Upload an Excel workbook (.xlsx)"));
+  },
+});
 
 router.post(
   "/scheduler/preview",

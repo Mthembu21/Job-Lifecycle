@@ -1,7 +1,9 @@
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
 import { env } from "./config/env";
 import { errorHandler } from "./middleware/errorHandler";
+import { apiLimiter } from "./middleware/rateLimit";
 import { prisma } from "./lib/prisma";
 import authRoutes from "./modules/auth/auth.routes";
 import usersRoutes from "./modules/users/users.routes";
@@ -19,15 +21,26 @@ import boardRoutes from "./modules/board/board.routes";
 export function createApp() {
   const app = express();
 
+  app.disable("x-powered-by");
+  if (env.trustProxy > 0) app.set("trust proxy", env.trustProxy);
+
+  // Security headers (no sniffing, no framing, HSTS, strict CSP — the API only ever returns JSON or files).
+  app.use(helmet());
   app.use(cors({ origin: env.corsOrigin }));
-  app.use(express.json());
+  app.use(express.json({ limit: "100kb" }));
+  app.use("/api", apiLimiter);
+  // API responses hold business data: never let a browser or proxy cache them.
+  app.use("/api", (_req, res, next) => {
+    res.setHeader("Cache-Control", "no-store");
+    next();
+  });
 
   app.get("/health", async (_req, res) => {
     try {
       await prisma.user.findFirst({ select: { id: true } });
-      res.json({ ok: true, database: "connected" });
+      res.json({ ok: true });
     } catch {
-      res.status(503).json({ ok: false, database: "disconnected" });
+      res.status(503).json({ ok: false });
     }
   });
 
@@ -44,6 +57,9 @@ export function createApp() {
   app.use("/api/import-export", importExportRoutes);
   app.use("/api/board", boardRoutes);
 
+  app.use("/api", (_req, res) => {
+    res.status(404).json({ error: "Not found" });
+  });
   app.use(errorHandler);
 
   return app;

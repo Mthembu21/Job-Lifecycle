@@ -1,7 +1,6 @@
-import * as XLSX from "xlsx";
 import { Priority } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
-import { HttpError } from "../../middleware/errorHandler";
+import { readSheetRows } from "./readWorkbook";
 import {
   COL,
   DATA_START_ROW,
@@ -35,22 +34,6 @@ function findDataStartRow(rows: unknown[][]): number {
   return DATA_START_ROW;
 }
 
-function readSchedulerRows(buffer: Buffer): unknown[][] {
-  let workbook: XLSX.WorkBook;
-  try {
-    workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
-  } catch {
-    throw new HttpError(400, "Could not read the uploaded file as an Excel workbook");
-  }
-
-  const sheet = workbook.Sheets[SCHEDULER_SHEET_NAME];
-  if (!sheet) {
-    throw new HttpError(400, `Workbook does not contain a "${SCHEDULER_SHEET_NAME}" sheet`);
-  }
-
-  return XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: true, defval: "" });
-}
-
 export interface ImportRowResult {
   referenceNumber: string;
   rowNumber: number;
@@ -66,7 +49,7 @@ export interface ImportSummary {
 }
 
 async function planImport(buffer: Buffer): Promise<{ toCreate: MappedSchedulerRow[]; summary: ImportSummary }> {
-  const rows = readSchedulerRows(buffer);
+  const rows = await readSheetRows(buffer, SCHEDULER_SHEET_NAME);
   const dataStart = findDataStartRow(rows);
   // Keep each row's real sheet position (1-based) before blank rows are filtered out.
   const dataRows = rows

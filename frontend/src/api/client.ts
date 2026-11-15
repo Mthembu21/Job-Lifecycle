@@ -28,7 +28,7 @@ apiClient.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       setStoredToken(null);
-      // The TV board is public and must never bounce to /login — a stale
+      // The TV board runs on its key link and must never bounce to /login: a stale
       // token left on that kiosk browser shouldn't be able to kick it off.
       const publicPath = ["/login", "/board"].some((p) => window.location.pathname.startsWith(p));
       if (!publicPath) {

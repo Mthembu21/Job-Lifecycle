@@ -1,12 +1,14 @@
-import { ReactNode } from "react";
+import { ReactNode, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { ArrowDownUp, Briefcase, CalendarCheck, ExternalLink, LayoutDashboard, LogOut, Moon, Sun } from "lucide-react";
+import { ArrowDownUp, Briefcase, CalendarCheck, ExternalLink, KeyRound, LayoutDashboard, LogOut, Moon, Sun } from "lucide-react";
 import { canEditForecast, canSeeBoardLink, canUseDataImportExport } from "../auth/permissions";
 import type { LucideIcon } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { useThemeMode } from "../theme/ThemeProvider";
 import { ROLE_LABELS } from "../constants";
 import { IconButton, Logo, cn } from "../components/ui";
+import { ChangePasswordDialog } from "./ChangePasswordDialog";
+import { CopyTvLinkButton } from "./CopyTvLinkButton";
 
 const NAV_ITEM =
   "group flex items-center gap-3 rounded-lg border-l-[3px] px-3 py-2 text-sm font-medium transition-colors";
@@ -28,6 +30,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const { mode, toggleMode } = useThemeMode();
   const navigate = useNavigate();
+  const [changingPassword, setChangingPassword] = useState(false);
 
   return (
     <div className="min-h-screen">
@@ -54,6 +57,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                 )}
               </span>
             </div>
+            <IconButton label="Change password" onClick={() => setChangingPassword(true)}>
+              <KeyRound />
+            </IconButton>
             <IconButton
               label="Log out"
               onClick={() => {
@@ -66,6 +72,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </>
         )}
       </header>
+      {changingPassword && <ChangePasswordDialog onClose={() => setChangingPassword(false)} />}
 
       <aside className="fixed top-16 bottom-0 left-0 z-30 hidden w-56 flex-col border-r border-gray-200 bg-white px-3 py-4 md:flex dark:border-gray-800 dark:bg-gray-900">
         <nav className="flex flex-col gap-1">
@@ -79,6 +86,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <span className="truncate">TV Board</span>
             </a>
           )}
+          {user?.role === "ADMIN" && <CopyTvLinkButton className={cn(NAV_ITEM, NAV_IDLE, "w-full text-left")} />}
         </nav>
       </aside>
 
