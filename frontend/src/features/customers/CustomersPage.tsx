@@ -7,6 +7,7 @@ import {
   customerMatchKey,
   existingCustomerOf,
   normalizeCustomerName,
+  similarCustomersOf,
   useCreateCustomer,
   useCustomers,
   useDeleteCustomer,
@@ -59,7 +60,8 @@ export function CustomersPage() {
           <TextField label="Search" hideLabel size="sm" placeholder="Search customers" value={search} onChange={(e) => setSearch(e.target.value)} className="[&_input]:pl-9" />
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-gray-400" />
         </div>
-        <div className="overflow-auto rounded-lg border border-gray-200 dark:border-gray-800">
+        {/* Scrolls inside the card (headings stay put) so a long list doesn't stretch the page. */}
+        <div className="max-h-[60vh] overflow-auto rounded-lg border border-gray-200 dark:border-gray-800">
           <table className="w-full text-sm">
             <thead className={STICKY_THEAD}>
               <tr>
@@ -166,20 +168,29 @@ function CustomerNameDialog({
   const rename = useRenameCustomer();
   const [name, setName] = useState(customer?.name ?? "");
   const [error, setError] = useState<string | null>(null);
+  // Set when the server says the name looks like a typo of a customer already on the list.
+  const [lookAlike, setLookAlike] = useState<ReturnType<typeof similarCustomersOf>>(null);
   const preview = normalizeCustomerName(name);
 
   async function save() {
     setError(null);
+    // Saving again after the look-alike warning = "it's a different customer" (planners / admins).
+    const confirmSimilar = lookAlike?.canOverride ? true : undefined;
     try {
       if (customer) {
-        const result = await rename.mutateAsync({ id: customer.id, name });
+        const result = await rename.mutateAsync({ id: customer.id, name, confirmSimilar });
         onSaved(result.name, result.jobsUpdated);
       } else {
-        const created = await create.mutateAsync(name);
+        const created = await create.mutateAsync({ name, confirmSimilar });
         onSaved(created.name);
       }
       onClose();
     } catch (err) {
+      const similar = similarCustomersOf(err);
+      if (similar) {
+        setLookAlike(similar);
+        return;
+      }
       const existing = existingCustomerOf(err);
       setError(
         existing
@@ -195,8 +206,16 @@ function CustomerNameDialog({
       columns={1}
       title={title}
       error={error}
+      warning={
+        lookAlike &&
+        `${preview} looks like ${lookAlike.similar.map((c) => c.name).join(", ")}, already on the customer list — check for a typo. ` +
+          (lookAlike.canOverride
+            ? `If it really is a different customer, ${customer ? "save" : "add"} it anyway.`
+            : "If it really is a different customer, ask a planner to add it.")
+      }
+      saveLabel={lookAlike?.canOverride ? (customer ? "Save anyway" : "Add anyway") : undefined}
       submitting={create.isPending || rename.isPending}
-      saveDisabled={preview.length < 2 || preview === customer?.name}
+      saveDisabled={preview.length < 2 || preview === customer?.name || (!!lookAlike && !lookAlike.canOverride)}
       onSave={save}
       onClose={onClose}
     >
@@ -205,7 +224,10 @@ function CustomerNameDialog({
         label="Customer name"
         required
         value={name}
-        onChange={(e) => setName(e.target.value)}
+        onChange={(e) => {
+          setName(e.target.value);
+          setLookAlike(null);
+        }}
         className="[&_input]:uppercase"
         helperText={preview && preview !== name ? `Will be saved as ${preview}` : "Saved in capitals"}
       />

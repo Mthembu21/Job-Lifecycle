@@ -6,6 +6,7 @@ import {
   customerMatchKey,
   existingCustomerOf,
   normalizeCustomerName,
+  similarCustomersOf,
   useCreateCustomer,
   useCustomers,
 } from "../../api/customers";
@@ -34,6 +35,8 @@ export function CustomerSelect({ value, onChange, label = "Customer", required, 
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const [addError, setAddError] = useState<string | null>(null);
+  // The name just refused as a likely typo of a customer already on the list, with those customers.
+  const [lookAlike, setLookAlike] = useState<(NonNullable<ReturnType<typeof similarCustomersOf>> & { typed: string }) | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listId = useId();
@@ -69,14 +72,22 @@ export function CustomerSelect({ value, onChange, label = "Customer", required, 
     setQuery("");
     setOpen(false);
     setAddError(null);
+    setLookAlike(null);
   }
 
-  async function add() {
+  async function add(name: string, confirmSimilar?: boolean) {
     setAddError(null);
+    setLookAlike(null);
     try {
-      const created = await createCustomer.mutateAsync(typed);
+      const created = await createCustomer.mutateAsync({ name, confirmSimilar });
       choose(created.name);
     } catch (err) {
+      const similar = similarCustomersOf(err);
+      if (similar) {
+        setLookAlike({ ...similar, typed: name });
+        setOpen(false);
+        return;
+      }
       const existing = existingCustomerOf(err);
       if (existing) choose(existing.name);
       else setAddError(apiErrorMessage(err, "Could not add the customer"));
@@ -95,7 +106,7 @@ export function CustomerSelect({ value, onChange, label = "Customer", required, 
       if (!open) return;
       e.preventDefault();
       if (active < matches.length) choose(matches[active].name);
-      else if (canAdd) add();
+      else if (canAdd) void add(typed);
     } else if (e.key === "Escape") {
       setOpen(false);
       setQuery("");
@@ -131,6 +142,7 @@ export function CustomerSelect({ value, onChange, label = "Customer", required, 
           onChange={(e) => {
             setQuery(e.target.value);
             setOpen(true);
+            setLookAlike(null);
           }}
           onKeyDown={onKeyDown}
           className={cn(
@@ -174,7 +186,7 @@ export function CustomerSelect({ value, onChange, label = "Customer", required, 
               role="option"
               aria-selected={false}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={add}
+              onClick={() => add(typed)}
               onMouseEnter={() => setActive(matches.length)}
               className={cn(
                 "flex cursor-pointer items-center gap-2 border-t border-gray-100 px-3 py-2 font-semibold dark:border-gray-800",
@@ -186,6 +198,38 @@ export function CustomerSelect({ value, onChange, label = "Customer", required, 
             </li>
           )}
         </ul>
+      )}
+
+      {lookAlike && (
+        <div role="alert" className="rounded-lg border border-yellow bg-yellow-soft px-3 py-2 text-xs text-gray-800 dark:bg-yellow/10 dark:text-gray-200">
+          <p>
+            <strong>{lookAlike.typed}</strong> looks like a customer already on the list — check for a typo. Did you mean:
+          </p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            {lookAlike.similar.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => choose(c.name)}
+                className="rounded-md bg-yellow px-2 py-1 font-semibold text-gray-900 hover:bg-yellow-hover"
+              >
+                {c.name}
+              </button>
+            ))}
+            {lookAlike.canOverride ? (
+              <button
+                type="button"
+                onClick={() => void add(lookAlike.typed, true)}
+                disabled={createCustomer.isPending}
+                className="px-1 font-semibold underline underline-offset-2"
+              >
+                {createCustomer.isPending ? "Adding…" : `No — add ${lookAlike.typed} as a different customer`}
+              </button>
+            ) : (
+              <span className="text-gray-600 dark:text-gray-400">If it's a different customer, ask a planner to add it.</span>
+            )}
+          </div>
+        </div>
       )}
 
       {(error || addError) && (

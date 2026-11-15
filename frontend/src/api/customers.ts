@@ -27,11 +27,27 @@ export function existingCustomerOf(err: unknown): { id: string; name: string } |
   return err.response.data?.existing ?? null;
 }
 
+/**
+ * A 409 "looks like a typo of a customer already on the list" answer: the look-alike customers,
+ * and whether this user may confirm it's a different customer (planners / admins).
+ */
+export function similarCustomersOf(err: unknown): { similar: { id: string; name: string }[]; canOverride: boolean } | null {
+  if (!axios.isAxiosError<{ similar?: { id: string; name: string }[]; canOverride?: boolean }>(err) || err.response?.status !== 409) return null;
+  const similar = err.response.data?.similar;
+  return similar?.length ? { similar, canOverride: err.response.data?.canOverride === true } : null;
+}
+
+/** `confirmSimilar`: "it's a different customer, not a typo" (planners / admins only). */
+export interface CustomerNameInput {
+  name: string;
+  confirmSimilar?: boolean;
+}
+
 export function useCreateCustomer() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (name: string) => {
-      const { data } = await apiClient.post<{ id: string; name: string }>("/customers", { name });
+    mutationFn: async (input: CustomerNameInput) => {
+      const { data } = await apiClient.post<{ id: string; name: string }>("/customers", input);
       return data;
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["customers"] }),
@@ -42,8 +58,8 @@ export function useCreateCustomer() {
 export function useRenameCustomer() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, name }: { id: string; name: string }) => {
-      const { data } = await apiClient.patch<{ id: string; name: string; jobsUpdated: number }>(`/customers/${id}`, { name });
+    mutationFn: async ({ id, ...input }: CustomerNameInput & { id: string }) => {
+      const { data } = await apiClient.patch<{ id: string; name: string; jobsUpdated: number }>(`/customers/${id}`, input);
       return data;
     },
     onSuccess: () => {

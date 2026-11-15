@@ -3,8 +3,8 @@ import { z } from "zod";
 import { prisma } from "../../lib/prisma";
 import { asyncHandler, HttpError } from "../../middleware/errorHandler";
 import { authenticate } from "../../middleware/auth";
-import { requireRole } from "../../middleware/rbac";
-import { customerNameProblem, findMatchingCustomer, normalizeCustomerName } from "../../lib/customers";
+import { hasRole, requireRole } from "../../middleware/rbac";
+import { customerNameProblem, findMatchingCustomer, normalizeCustomerName, similarCustomers } from "../../lib/customers";
 
 const router = Router();
 
@@ -22,7 +22,35 @@ router.get(
   })
 );
 
-const createSchema = z.object({ name: z.string() });
+const createSchema = z.object({
+  name: z.string(),
+  /** "It's a different customer, not a typo" — accepted from planners / admins only. */
+  confirmSimilar: z.boolean().optional(),
+});
+
+/**
+ * Refuses a name that looks like a typo of a customer already on the list (409 with `similar`).
+ * Planners and admins, who look after the list, can confirm it's a different customer; nobody
+ * else can, so a storeman's typo can't create a second copy of a customer.
+ */
+function refuseLookAlike(
+  name: string,
+  others: { id: string; name: string }[],
+  user: Express.Request["user"],
+  confirmSimilar: boolean | undefined
+) {
+  const similar = similarCustomers(name, others);
+  if (similar.length === 0) return;
+  const canOverride = hasRole(user, "PLANNER");
+  if (canOverride && confirmSimilar === true) return;
+  const names = similar.map((c) => c.name).join(", ");
+  throw new HttpError(
+    409,
+    `${name} looks like ${names}, already on the customer list — check for a typo` +
+      (canOverride ? "" : ". If it really is a different customer, ask a planner to add it"),
+    { similar, canOverride }
+  );
+}
 
 /**
  * POST /customers — adds a customer. The name is saved in capitals; a name that's already on the
@@ -34,17 +62,19 @@ router.post(
   authenticate,
   requireRole("STOREMAN", "PLANNER"),
   asyncHandler(async (req, res) => {
-    const { name: raw } = createSchema.parse(req.body);
+    const { name: raw, confirmSimilar } = createSchema.parse(req.body);
     const name = normalizeCustomerName(raw);
 
     // First: is it a customer we already have (same name, near-copy, or a SASOL site)? The form
     // then simply picks that customer.
-    const existing = findMatchingCustomer(name, await prisma.customer.findMany({ select: { id: true, name: true } }));
+    const all = await prisma.customer.findMany({ select: { id: true, name: true } });
+    const existing = findMatchingCustomer(name, all);
     if (existing) {
       throw new HttpError(409, `${existing.name} is already on the customer list`, { existing });
     }
     const problem = customerNameProblem(raw);
     if (problem) throw new HttpError(400, problem);
+    refuseLookAlike(name, all, req.user, confirmSimilar);
 
     try {
       const created = await prisma.customer.create({ data: { name, createdById: req.user!.sub }, select: { id: true, name: true } });
@@ -70,7 +100,7 @@ router.patch(
   authenticate,
   requireRole("PLANNER"),
   asyncHandler(async (req, res) => {
-    const { name: raw } = createSchema.parse(req.body);
+    const { name: raw, confirmSimilar } = createSchema.parse(req.body);
     const problem = customerNameProblem(raw);
     if (problem) throw new HttpError(400, problem);
     const name = normalizeCustomerName(raw);
@@ -84,6 +114,7 @@ router.patch(
     const others = await prisma.customer.findMany({ where: { id: { not: customer.id } }, select: { id: true, name: true } });
     const clash = findMatchingCustomer(name, others);
     if (clash) throw new HttpError(409, `${clash.name} is already on the customer list`, { existing: clash });
+    refuseLookAlike(name, others, req.user, confirmSimilar);
 
     const jobs = await prisma.job.findMany({ where: { customer: customer.name }, select: { id: true } });
     await prisma.$transaction([
