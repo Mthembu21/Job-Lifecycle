@@ -54,6 +54,17 @@ export function useRenameCustomer() {
   });
 }
 
+/** Removes a customer from the list — only one with no jobs (the server refuses otherwise). */
+export function useDeleteCustomer() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await apiClient.delete(`/customers/${id}`);
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["customers"] }),
+  });
+}
+
 /** Same rule as the server (backend lib/customers.ts): capitals, single spaces. */
 export function normalizeCustomerName(name: string): string {
   return name.trim().replace(/\s+/g, " ").toUpperCase();

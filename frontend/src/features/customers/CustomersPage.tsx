@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Pencil, Plus, Search } from "lucide-react";
+import { Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { apiErrorMessage } from "../../api/client";
 import {
   Customer,
@@ -9,13 +9,15 @@ import {
   normalizeCustomerName,
   useCreateCustomer,
   useCustomers,
+  useDeleteCustomer,
   useRenameCustomer,
 } from "../../api/customers";
 import { useAuth } from "../../auth/AuthContext";
-import { canAddCustomer, canRenameCustomer } from "../../auth/permissions";
+import { canAddCustomer, canDeleteCustomer, canRenameCustomer } from "../../auth/permissions";
 import { Alert, Button, Card, IconButton, PageHeader, PageSpinner, TextField, cn } from "../../components/ui";
 import { EmptyRow, STICKY_THEAD, TD, TH } from "../../components/ui/Table";
 import { FormDialog } from "../../components/FormDialog";
+import { ConfirmDeleteDialog } from "../../components/ConfirmDeleteDialog";
 
 /** The customer list: search it, add customers, and (planners / admins) correct a customer's name everywhere. */
 export function CustomersPage() {
@@ -24,6 +26,8 @@ export function CustomersPage() {
   const [search, setSearch] = useState("");
   const [adding, setAdding] = useState(false);
   const [renaming, setRenaming] = useState<Customer | null>(null);
+  const [deleting, setDeleting] = useState<Customer | null>(null);
+  const deleteCustomer = useDeleteCustomer();
   const [notice, setNotice] = useState<string | null>(null);
 
   const shown = useMemo(() => {
@@ -61,7 +65,7 @@ export function CustomersPage() {
               <tr>
                 <th className={TH}>Customer</th>
                 <th className={cn(TH, "text-right")}>Jobs</th>
-                <th className={cn(TH, "w-12")} />
+                <th className={cn(TH, "w-24")} />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -78,10 +82,23 @@ export function CustomersPage() {
                       0
                     )}
                   </td>
-                  <td className={cn(TD, "text-right")}>
+                  <td className={cn(TD, "text-right whitespace-nowrap")}>
                     {canRenameCustomer(user?.role) && (
                       <IconButton size="sm" label={`Rename ${c.name}`} onClick={() => setRenaming(c)}>
                         <Pencil />
+                      </IconButton>
+                    )}
+                    {canDeleteCustomer(user?.role) && c.jobCount === 0 && (
+                      <IconButton
+                        size="sm"
+                        tone="danger"
+                        label={`Delete ${c.name}`}
+                        onClick={() => {
+                          deleteCustomer.reset();
+                          setDeleting(c);
+                        }}
+                      >
+                        <Trash2 />
                       </IconButton>
                     )}
                   </td>
@@ -92,6 +109,8 @@ export function CustomersPage() {
         </div>
         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
           {customers.length} customers. Click a job count to see that customer's jobs.
+          {canDeleteCustomer(user?.role) &&
+            " Only a customer with no jobs can be deleted — to remove a duplicate, move its jobs to the right customer first."}
         </p>
       </Card>
 
@@ -111,6 +130,21 @@ export function CustomersPage() {
             setNotice(`${renaming.name} is now ${name}${jobsUpdated ? ` — ${jobsUpdated} job${jobsUpdated === 1 ? "" : "s"} updated` : ""}.`)
           }
         />
+      )}
+      {deleting && (
+        <ConfirmDeleteDialog
+          title={`Delete ${deleting.name}?`}
+          mutation={deleteCustomer}
+          variables={deleting.id}
+          errorFallback="Could not delete the customer"
+          onDeleted={() => {
+            setNotice(`${deleting.name} was removed from the customer list.`);
+            setDeleting(null);
+          }}
+          onClose={() => setDeleting(null)}
+        >
+          {deleting.name} will be removed from the customer list. It has no jobs, so no job is affected.
+        </ConfirmDeleteDialog>
       )}
     </div>
   );

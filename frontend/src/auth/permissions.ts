@@ -50,3 +50,8 @@ export function canAddCustomer(role: Role | undefined): boolean {
 export function canRenameCustomer(role: Role | undefined): boolean {
   return role === "PLANNER" || role === "ADMIN";
 }
+
+/** Deleting a customer (only one with no jobs) — planners and admins, like renaming. */
+export function canDeleteCustomer(role: Role | undefined): boolean {
+  return role === "PLANNER" || role === "ADMIN";
+}

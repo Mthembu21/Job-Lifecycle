@@ -91,18 +91,47 @@ router.patch(
       prisma.job.updateMany({ where: { customer: customer.name }, data: { customer: name } }),
       // Frozen forecasts keep their amounts; only the customer's label follows the rename.
       prisma.forecastSnapshot.updateMany({ where: { customer: customer.name }, data: { customer: name } }),
-      prisma.jobAuditLog.createMany({
-        data: jobs.map((j) => ({
-          jobId: j.id,
-          stage: "JOB",
-          action: "UPDATE",
-          summary: `Customer: ${customer.name} -> ${name}`,
-          comment: "Customer renamed on the customer list",
-          changedById: req.user!.sub,
-        })),
-      }),
+      // MongoDB refuses an empty insert, so a customer with no jobs gets no history entries.
+      ...(jobs.length > 0
+        ? [
+            prisma.jobAuditLog.createMany({
+              data: jobs.map((j) => ({
+                jobId: j.id,
+                stage: "JOB",
+                action: "UPDATE",
+                summary: `Customer: ${customer.name} -> ${name}`,
+                comment: "Customer renamed on the customer list",
+                changedById: req.user!.sub,
+              })),
+            }),
+          ]
+        : []),
     ]);
     res.json({ id: customer.id, name, jobsUpdated: jobs.length });
+  })
+);
+
+/**
+ * DELETE /customers/:id — removes a customer from the list (e.g. a duplicate added by mistake).
+ * Only a customer with no jobs can go: a job's customer must always be on the list. To merge a
+ * duplicate that has jobs, move its jobs to the right customer first.
+ */
+router.delete(
+  "/:id",
+  authenticate,
+  requireRole("PLANNER"),
+  asyncHandler(async (req, res) => {
+    const customer = await prisma.customer.findUnique({ where: { id: req.params.id } });
+    if (!customer) throw new HttpError(404, "Customer not found");
+    const jobCount = await prisma.job.count({ where: { customer: customer.name } });
+    if (jobCount > 0) {
+      throw new HttpError(
+        409,
+        `${customer.name} has ${jobCount} job${jobCount === 1 ? "" : "s"} — move ${jobCount === 1 ? "it" : "them"} to another customer before deleting`
+      );
+    }
+    await prisma.customer.delete({ where: { id: customer.id } });
+    res.status(204).end();
   })
 );
 
