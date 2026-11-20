@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { AlertTriangle, Pencil, Plus, Trash2 } from "lucide-react";
 import { useJobs, JobFilters } from "../../api/jobs";
@@ -27,6 +27,27 @@ const PRIORITY_TONE: Record<Priority, BadgeTone> = {
 
 const TD = `${TD_BASE} whitespace-nowrap`;
 
+/** Reference series in list order: the main AM series on top, then the smaller ones. */
+const SERIES_ORDER = ["AM", "ADS", "SDE"];
+
+/** "AM11655" → { series: "AM", number: 11655 }; references that don't fit the pattern → null. */
+function parseReference(ref: string): { series: string; number: number } | null {
+  const m = /^([A-Z]+)\s*-?\s*(\d+)$/i.exec(ref.trim());
+  return m ? { series: m[1].toUpperCase(), number: Number(m[2]) } : null;
+}
+
+/**
+ * Highest reference first within each series (AM11655, AM11654, …), series in SERIES_ORDER, any
+ * other series after them A–Z, and references that aren't "letters + number" at the bottom.
+ */
+function byNewestFirst(a: Job, b: Job): number {
+  const ra = parseReference(a.referenceNumber);
+  const rb = parseReference(b.referenceNumber);
+  if (!ra || !rb) return ra ? -1 : rb ? 1 : a.referenceNumber.localeCompare(b.referenceNumber);
+  const rank = (s: string) => (SERIES_ORDER.includes(s) ? SERIES_ORDER.indexOf(s) : SERIES_ORDER.length);
+  return rank(ra.series) - rank(rb.series) || ra.series.localeCompare(rb.series) || rb.number - ra.number;
+}
+
 export function JobListPage() {
   // Filters live in the URL, so dashboard links open the exact jobs behind a number and a
   // filtered list survives refresh / can be shared.
@@ -34,8 +55,15 @@ export function JobListPage() {
   const filters: JobFilters = Object.fromEntries(searchParams.entries());
   const setFilters = (next: JobFilters) =>
     setSearchParams(Object.fromEntries(Object.entries(next).filter(([, v]) => v)) as Record<string, string>, { replace: true });
-  const { data: jobs, isLoading } = useJobs(filters);
+  const { data: loadedJobs, isLoading } = useJobs(filters);
   const { user } = useAuth();
+  // Supervisors see the newest jobs first (highest reference number on top, see byNewestFirst);
+  // everyone else gets the server's order, by reference number A–Z.
+  const newestFirst = user?.role === "SUPERVISOR";
+  const jobs = useMemo(
+    () => (newestFirst && loadedJobs ? [...loadedJobs].sort(byNewestFirst) : loadedJobs),
+    [loadedJobs, newestFirst]
+  );
   const navigate = useNavigate();
   const [deletingJob, setDeletingJob] = useState<Job | null>(null);
   const [editingWoDateJob, setEditingWoDateJob] = useState<Job | null>(null);
